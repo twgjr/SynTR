@@ -13,16 +13,16 @@ models = {
     ## "Metric-AI/ColQwen2.5-3b-multilingual-v1.0":[ColQwen2_5,ColQwen2_5_Processor],
     ## "yydxlv/colqwen2.5-7b-v0.1":[ColQwen2_5,ColQwen2_5_Processor],
     "tsystems/colqwen2-7b-v1.0": [ColQwen2, ColQwen2Processor],
-    # "yydxlv/colqwen2-7b-v1.0",
+    # "yydxlv/colqwen2-7b-v1.0": [ColQwen2, ColQwen2Processor],
     ## "Metric-AI/colqwen2.5-3b-multilingual":[ColQwen2_5,ColQwen2_5_Processor],
     # "Alibaba-NLP/gme-Qwen2-VL-7B-Instruct",
     # "Metric-AI/ColQwenStella-2b-multilingual",
-    # "tsystems/colqwen2-2b-v1.0",
+    # "tsystems/colqwen2-2b-v1.0": [ColQwen2, ColQwen2Processor],
     ## "vidore/colqwen2.5-v0.2":[ColQwen2_5,ColQwen2_5_Processor],
-    # "vidore/colqwen2-v1.0",
+    # "vidore/colqwen2-v1.0": [ColQwen2, ColQwen2Processor],
     ## "vidore/colqwen2.5-v0.1":[ColQwen2_5,ColQwen2_5_Processor],
     # "Alibaba-NLP/gme-Qwen2-VL-2B-Instruct",
-    # "vidore/colqwen2-v0.1",
+    # "vidore/colqwen2-v0.1": [ColQwen2, ColQwen2Processor],
     # "vidore/colsmolvlm-v0.1",
     # "MrLight/dse-qwen2-2b-mrl-v1",
     # "vidore/colpali-v1.3",
@@ -81,16 +81,24 @@ def test_vidore_evaluator(dataset_name, split, batch_size, vidore_evaluator):
     )
     return metrics
 
+
 def save_metrics(metrics, model_name, dataset_name):
+    # replace '/' from model name and dataset name with '_'
+    model_name = model_name.replace("/", "_")
+    dataset_name = dataset_name.replace("/", "_")
+
     with open(f"{model_name}_{dataset_name}_metrics.txt", "w") as f:
         f.write(str(metrics))
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     for model_name in models:
         processor = get_processor_instance(model_name)
         model = get_model_instance(model_name)
         vision_retriever = get_retriever_instance(model, processor)
         vidore_evaluator = get_vidore_evaluator(vision_retriever)
         for vidore_name in vidore_names:
-            metrics = test_vidore_evaluator(vidore_name, "test", BATCH_SIZE, vidore_evaluator)
+            metrics = test_vidore_evaluator(
+                vidore_name, "test", BATCH_SIZE, vidore_evaluator
+            )
             save_metrics(metrics, model_name, vidore_name)

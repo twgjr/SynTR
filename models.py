@@ -1,5 +1,5 @@
 import torch
-from colpali_engine.models import ColIdefics3, ColIdefics3Processor
+from colpali_engine.models import ColQwen2_5, ColQwen2_5_Processor
 from datasets import load_dataset
 
 from vidore_benchmark.evaluation.vidore_evaluators import ViDoReEvaluatorQA
@@ -7,8 +7,8 @@ from vidore_benchmark.retrievers import VisionRetriever
 
 BATCH_SIZE = 4
 
-model_names = [
-    "Metric-AI/ColQwen2.5-7b-multilingual-v1.0",
+models = {
+    "Metric-AI/ColQwen2.5-7b-multilingual-v1.0":[ColQwen2_5,ColQwen2_5_Processor],
     # "Metric-AI/ColQwen2.5-3b-multilingual-v1.0",
     # "yydxlv/colqwen2.5-7b-v0.1",
     # "tsystems/colqwen2-7b-v1.0",
@@ -34,7 +34,7 @@ model_names = [
     # "MrLight/dse-phi35-vidore-ft",
     # "vidore/colpali2-3b-pt-448",
     # "marco/mcdse-2b-v1",
-]
+}
 
 vidore_names = [
     "vidore/arxivqa_test_subsampled",
@@ -51,11 +51,13 @@ vidore_names = [
 
 
 def get_processor_instance(model_name):
-    return ColIdefics3Processor.from_pretrained(model_name)
+    processor_class = models[model_name][1]
+    return processor_class.from_pretrained(model_name)
 
 
 def get_model_instance(model_name):
-    return ColIdefics3.from_pretrained(
+    model_class = models[model_name][0]
+    return model_class.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16,
         device_map="cuda",
@@ -83,7 +85,7 @@ def save_metrics(metrics, model_name, dataset_name):
         f.write(str(metrics))
 
 if __name__=="__main__":
-    for model_name in model_names:
+    for model_name in models:
         processor = get_processor_instance(model_name)
         model = get_model_instance(model_name)
         vision_retriever = get_retriever_instance(model, processor)

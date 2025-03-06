@@ -7,6 +7,8 @@ from vidore_benchmark.evaluation.vidore_evaluators import ViDoReEvaluatorQA
 from vidore_benchmark.retrievers import VisionRetriever
 from vidore_benchmark.utils.data_utils import get_datasets_from_collection
 
+BATCH_SIZE=4
+
 model_name = "vidore/colSmol-256M"
 processor = ColIdefics3Processor.from_pretrained(model_name)
 model = ColIdefics3.from_pretrained(
@@ -23,8 +25,9 @@ vidore_evaluator = ViDoReEvaluatorQA(vision_retriever)
 ds = load_dataset("vidore/tabfquad_test_subsampled", split="test")
 metrics_dataset = vidore_evaluator.evaluate_dataset(
     ds=ds,
-    batch_query=4,
-    batch_passage=4,
+    batch_query=BATCH_SIZE,
+    batch_passage=BATCH_SIZE,
+    batch_score=BATCH_SIZE
 )
 print(metrics_dataset)
 
@@ -34,7 +37,8 @@ metrics_collection = {}
 for dataset_name in tqdm(dataset_names, desc="Evaluating dataset(s)"):
     metrics_collection[dataset_name] = vidore_evaluator.evaluate_dataset(
         ds=load_dataset(dataset_name, split="test"),
-        batch_query=4,
-        batch_passage=4,
+        batch_query=BATCH_SIZE,
+        batch_passage=BATCH_SIZE,
+        batch_score=BATCH_SIZE
     )
 print(metrics_collection)

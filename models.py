@@ -1,3 +1,4 @@
+import os
 import torch
 from colpali_engine.models import ColQwen2, ColQwen2Processor
 
@@ -87,17 +88,30 @@ def save_metrics(metrics, model_name, dataset_name):
     model_name = model_name.replace("/", "_")
     dataset_name = dataset_name.replace("/", "_")
 
-    with open(f"{model_name}_{dataset_name}_metrics.txt", "w") as f:
+    path = os.path.join("metrics", model_name, dataset_name)
+    if not os.path.exists(path):
+        os.makedirs(os.path.join("metrics", model_name))
+    with open(os.path.join("metrics", model_name, dataset_name), "w") as f:
         f.write(str(metrics))
 
 
 if __name__ == "__main__":
+    metrics_dir = "metrics"
+    if not os.path.exists(metrics_dir):
+        os.makedirs(metrics_dir)
     for model_name in models:
+        metrics_model_dir = os.path.join(metrics_dir, model_name)
+        if os.path.exists(metrics_model_dir):
+            continue
+        os.makedirs(metrics_model_dir)
         processor = get_processor_instance(model_name)
         model = get_model_instance(model_name)
         vision_retriever = get_retriever_instance(model, processor)
         vidore_evaluator = get_vidore_evaluator(vision_retriever)
         for vidore_name in vidore_names:
+            metrics_model_path = os.path.join(metrics_model_dir, vidore_name)
+            if os.path.exists(metrics_model_path):
+                continue
             metrics = test_vidore_evaluator(
                 vidore_name, "test", BATCH_SIZE, vidore_evaluator
             )

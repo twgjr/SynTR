@@ -1,5 +1,6 @@
 import torch
-from colpali_engine.models import ColQwen2_5, ColQwen2_5_Processor
+from colpali_engine.models import ColQwen2, ColQwen2Processor
+
 from datasets import load_dataset
 
 from vidore_benchmark.evaluation.vidore_evaluators import ViDoReEvaluatorQA
@@ -8,18 +9,18 @@ from vidore_benchmark.retrievers import VisionRetriever
 BATCH_SIZE = 4
 
 models = {
-    "Metric-AI/ColQwen2.5-7b-multilingual-v1.0":[ColQwen2_5,ColQwen2_5_Processor],
-    # "Metric-AI/ColQwen2.5-3b-multilingual-v1.0",
-    # "yydxlv/colqwen2.5-7b-v0.1",
-    # "tsystems/colqwen2-7b-v1.0",
+    ## "Metric-AI/ColQwen2.5-7b-multilingual-v1.0":[ColQwen2_5,ColQwen2_5_Processor],
+    ## "Metric-AI/ColQwen2.5-3b-multilingual-v1.0":[ColQwen2_5,ColQwen2_5_Processor],
+    ## "yydxlv/colqwen2.5-7b-v0.1":[ColQwen2_5,ColQwen2_5_Processor],
+    "tsystems/colqwen2-7b-v1.0": [ColQwen2, ColQwen2Processor],
     # "yydxlv/colqwen2-7b-v1.0",
-    # "Metric-AI/colqwen2.5-3b-multilingual",
+    ## "Metric-AI/colqwen2.5-3b-multilingual":[ColQwen2_5,ColQwen2_5_Processor],
     # "Alibaba-NLP/gme-Qwen2-VL-7B-Instruct",
     # "Metric-AI/ColQwenStella-2b-multilingual",
     # "tsystems/colqwen2-2b-v1.0",
-    # "vidore/colqwen2.5-v0.2",
+    ## "vidore/colqwen2.5-v0.2":[ColQwen2_5,ColQwen2_5_Processor],
     # "vidore/colqwen2-v1.0",
-    # "vidore/colqwen2.5-v0.1",
+    ## "vidore/colqwen2.5-v0.1":[ColQwen2_5,ColQwen2_5_Processor],
     # "Alibaba-NLP/gme-Qwen2-VL-2B-Instruct",
     # "vidore/colqwen2-v0.1",
     # "vidore/colsmolvlm-v0.1",
@@ -38,7 +39,7 @@ models = {
 
 vidore_names = [
     "vidore/arxivqa_test_subsampled",
-    "vidore/docvqa_test_subsampled",
+    # "vidore/docvqa_test_subsampled",
     # "vidore/infovqa_test_subsampled",
     # "vidore/tatdqa_test",
     # "vidore/tabfquad_test_subsampled",

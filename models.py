@@ -78,6 +78,10 @@ def test_vidore_evaluator(dataset_name, split, batch_size, vidore_evaluator):
     )
     return metrics
 
+def save_metrics(metrics, model_name, dataset_name):
+    with open(f"{model_name}_{dataset_name}_metrics.txt", "w") as f:
+        f.write(str(metrics))
+
 if __name__=="__main__":
     for model_name in model_names:
         processor = get_processor_instance(model_name)
@@ -86,4 +90,4 @@ if __name__=="__main__":
         vidore_evaluator = get_vidore_evaluator(vision_retriever)
         for vidore_name in vidore_names:
             metrics = test_vidore_evaluator(vidore_name, "test", BATCH_SIZE, vidore_evaluator)
-            print(f"Model: {model_name}, Dataset: {vidore_name}, Metrics: {metrics}")
+            save_metrics(metrics, model_name, vidore_name)

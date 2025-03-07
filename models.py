@@ -1,4 +1,5 @@
 import os
+import json
 import torch
 from colpali_engine.models import ColQwen2, ColQwen2Processor
 
@@ -83,22 +84,18 @@ def test_vidore_evaluator(dataset_name, split, batch_size, vidore_evaluator):
     return metrics
 
 
-def save_metrics(metrics, model_name, dataset_name):
-    # replace '/' from model name and dataset name with '_'
-    model_name = model_name.replace("/", "_")
-    dataset_name = dataset_name.replace("/", "_")
-
-    path = os.path.join("metrics", model_name, dataset_name)
-    if not os.path.exists(path):
-        os.makedirs(os.path.join("metrics", model_name))
-    with open(os.path.join("metrics", model_name, dataset_name), "w") as f:
-        f.write(str(metrics))
+def save_metrics(metrics, path):
+    path = path.replace("/", "_")
+    path = os.path.join(path, ".json")
+    with open(path, "w") as f:
+        json.dump(metrics, f, indent=4)
 
 
-if __name__ == "__main__":
+def evaluate_all_models():
     metrics_dir = "metrics"
     if not os.path.exists(metrics_dir):
         os.makedirs(metrics_dir)
+
     for model_name in models:
         metrics_model_dir = os.path.join(metrics_dir, model_name)
         if os.path.exists(metrics_model_dir):
@@ -115,4 +112,8 @@ if __name__ == "__main__":
             metrics = test_vidore_evaluator(
                 vidore_name, "test", BATCH_SIZE, vidore_evaluator
             )
-            save_metrics(metrics, model_name, vidore_name)
+            save_metrics(metrics, metrics_model_path)
+
+
+if __name__ == "__main__":
+    evaluate_all_models()

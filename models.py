@@ -84,9 +84,8 @@ def test_vidore_evaluator(dataset_name, split, batch_size, vidore_evaluator):
     return metrics
 
 
-def save_metrics(metrics, path):
-    path = path.replace("/", "_")
-    path = os.path.join(path, ".json")
+def save_metrics(metrics, dir):
+    path = os.path.join(dir, ".json")
     with open(path, "w") as f:
         json.dump(metrics, f, indent=4)
 
@@ -106,13 +105,14 @@ def evaluate_all_models():
         vision_retriever = get_retriever_instance(model, processor)
         vidore_evaluator = get_vidore_evaluator(vision_retriever)
         for vidore_name in vidore_names:
-            metrics_model_path = os.path.join(metrics_model_dir, vidore_name)
-            if os.path.exists(metrics_model_path):
+            metrics_model_vidore_dir = os.path.join(metrics_model_dir, vidore_name)
+            if os.path.exists(metrics_model_vidore_dir):
                 continue
+            os.makedirs(metrics_model_vidore_dir)
             metrics = test_vidore_evaluator(
                 vidore_name, "test", BATCH_SIZE, vidore_evaluator
             )
-            save_metrics(metrics, metrics_model_path)
+            save_metrics(metrics, metrics_model_vidore_dir)
 
 
 if __name__ == "__main__":

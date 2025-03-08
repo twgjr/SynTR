@@ -11,7 +11,7 @@ from transformers import AutoModel, AutoProcessor, \
 
 from dataset import dataset_names, load_local_dataset
 
-from vidore_benchmark.evaluation.vidore_evaluators import ViDoReEvaluatorQA
+from vidore_benchmark.evaluation.vidore_evaluators import ViDoReEvaluatorBEIR, BEIRDataset
 from vidore_benchmark.retrievers import VisionRetriever
 
 BATCH_SIZE = 4
@@ -53,7 +53,7 @@ def get_model_instance(model_name, use_4bit=False, use_cuda=True):
         model_name,
         torch_dtype=torch.bfloat16,
         device_map="cuda" if use_cuda else "cpu",
-        load_in_8bit=use_4bit,
+        load_in_4bit=use_4bit,
     ).eval()
 
 
@@ -62,12 +62,13 @@ def get_retriever_instance(model, processor):
 
 
 def get_vidore_evaluator(vision_retriever):
-    return ViDoReEvaluatorQA(vision_retriever)
+    return ViDoReEvaluatorBEIR(vision_retriever)
 
 
-def test_vidore_evaluator(dataset_name, batch_size, vidore_evaluator: ViDoReEvaluatorQA):
+def test_vidore_evaluator(dataset_name, batch_size, vidore_evaluator: ViDoReEvaluatorBEIR):
     # Evaluate on a single dataset
-    ds = load_local_dataset(dataset_name)
+    corpus, queries, qrels = load_local_dataset(dataset_name)
+    ds = BEIRDataset(corpus=corpus, queries=queries, qrels=qrels)
     metrics = vidore_evaluator.evaluate_dataset(
         ds=ds, batch_query=batch_size, batch_passage=batch_size, batch_score=batch_size
     )

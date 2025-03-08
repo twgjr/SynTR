@@ -2,16 +2,8 @@ from datasets import load_dataset, load_from_disk
 import os
 
 dataset_names = [
-    'vidore/arxivqa_test_subsampled_beir',
-    # 'vidore/docvqa_test_subsampled_beir',
-    # 'vidore/infovqa_test_subsampled_beir',
-    # 'vidore/tabfquad_test_subsampled_beir',
-    # 'vidore/tatdqa_test_beir',
-    # 'vidore/shiftproject_test_beir',
-    # 'vidore/syntheticDocQA_artificial_intelligence_test_beir',
-    # 'vidore/syntheticDocQA_energy_test_beir',
-    # 'vidore/syntheticDocQA_government_reports_test_beir',
-    # 'vidore/syntheticDocQA_healthcare_industry_test_beir',
+    'vidore/docvqa_test_subsampled_beir',
+    'vidore/tatdqa_test_beir',
 ]
 
 def download_dataset(name):

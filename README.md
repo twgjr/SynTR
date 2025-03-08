@@ -4,5 +4,5 @@
 * `conda activate vilarmor`
 * `conda install -c conda-forge sentencepiece`
 * `pip install "vidore-benchmark[all-retrievers]"`
-
-Note:  The ViDoRe package is based on CUDA.  Run with NVIDIA GPU.
+* Install colpali-engineer from source to include ColQwen2.5: `pip install git+https://github.com/illuin-tech/colpali`
+* If you want to use quantized on gpu for faster inference: `pip install bitsandbytes`

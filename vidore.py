@@ -7,7 +7,7 @@ from colpali_engine.models import ColQwen2, ColQwen2Processor, \
                                 ColPali, ColPaliProcessor
 from transformers import AutoModel, AutoProcessor, \
                         Qwen2VLForConditionalGeneration, \
-                        AutoProcessor, AutoModelForCausalLM
+                        AutoProcessor
 
 from dataset import dataset_names, load_local_dataset
 
@@ -19,7 +19,8 @@ BATCH_SIZE = 4
 models = {
     "Metric-AI/ColQwen2.5-3b-multilingual-v1.0":[ColQwen2_5,ColQwen2_5_Processor],
     "Metric-AI/colqwen2.5-3b-multilingual":[ColQwen2_5,ColQwen2_5_Processor],
-    "Metric-AI/ColQwenStella-2b-multilingual":[AutoModel, AutoProcessor],
+    # below model requires remote code trust, security risk
+    # "Metric-AI/ColQwenStella-2b-multilingual":[AutoModel, AutoProcessor],
     "tsystems/colqwen2-2b-v1.0": [ColQwen2, ColQwen2Processor],
     "vidore/colqwen2.5-v0.2":[ColQwen2_5,ColQwen2_5_Processor],
     "vidore/colqwen2-v1.0": [ColQwen2, ColQwen2Processor],
@@ -35,36 +36,57 @@ models = {
 
 def get_processor_instance(model_name):
     processor_class = models[model_name][1]
-    return processor_class.from_pretrained(model_name)
+    try:
+        instance = processor_class.from_pretrained(model_name)
+    except Exception as e:
+        print(f"Problem creating processor: {e}")
+    return instance
 
 
-def get_model_instance(model_name, use_4bit=False, use_cuda=True):
+
+def get_model_instance(model_name):
     # all models inherit from PreTrainedModel so support load_in_4bit and 
     # load_in_8bit methods
     model_class = models[model_name][0]
-    return model_class.from_pretrained(
-        model_name,
-        torch_dtype=torch.bfloat16,
-        device_map="cuda" if use_cuda else "cpu",
-        load_in_4bit=use_4bit,
-    ).eval()
+
+    try:
+        instance = model_class.from_pretrained(
+            model_name,
+            torch_dtype=torch.bfloat16,
+            device_map="cuda",
+        ).eval()
+    except Exception as e:
+        print(f"Problem with getting pretrained model: {e}")
+
+    return instance
 
 
 def get_retriever_instance(model, processor):
-    return VisionRetriever(model=model, processor=processor)
+    try:
+        instance = VisionRetriever(model=model, processor=processor)
+    except Exception as e:
+        print(f"Problem with creating Retriever: {e}")
+    return instance
 
 
 def get_vidore_evaluator(vision_retriever):
-    return ViDoReEvaluatorBEIR(vision_retriever)
+    try:
+        evaluator = ViDoReEvaluatorBEIR(vision_retriever)
+    except Exception as e:
+        print(f"Problem with creating Evaluator: {e}")
+    return evaluator
 
 
 def test_vidore_evaluator(dataset_name, batch_size, vidore_evaluator: ViDoReEvaluatorBEIR):
     # Evaluate on a single dataset
     corpus, queries, qrels = load_local_dataset(dataset_name)
     ds = BEIRDataset(corpus=corpus, queries=queries, qrels=qrels)
-    metrics = vidore_evaluator.evaluate_dataset(
-        ds=ds, batch_query=batch_size, batch_passage=batch_size, batch_score=batch_size
-    )
+    try:
+        metrics = vidore_evaluator.evaluate_dataset(
+            ds=ds, batch_query=batch_size, batch_passage=batch_size, batch_score=batch_size
+        )
+    except Exception as e:
+        print(f"Problem running ViDoReEvaluatorBEIR: {e}")
     return metrics
 
 
@@ -73,7 +95,7 @@ def save_json(metrics, path):
         json.dump(metrics, f, indent=4)
 
 
-def evaluate_all_models(use_4bit=True, use_cuda=True):
+def evaluate_all_models():
     metrics_dir = "metrics"
     if not os.path.exists(metrics_dir):
         os.makedirs(metrics_dir)
@@ -83,7 +105,7 @@ def evaluate_all_models(use_4bit=True, use_cuda=True):
         if not os.path.exists(metrics_model_dir):
             os.makedirs(metrics_model_dir)
         processor = get_processor_instance(model_name)
-        model = get_model_instance(model_name, use_4bit=use_4bit, use_cuda=use_cuda)
+        model = get_model_instance(model_name)
         vision_retriever = get_retriever_instance(model, processor)
         vidore_evaluator = get_vidore_evaluator(vision_retriever)
         for vidore_path in dataset_names:
@@ -93,6 +115,7 @@ def evaluate_all_models(use_4bit=True, use_cuda=True):
                 metrics = test_vidore_evaluator(
                     vidore_path, BATCH_SIZE, vidore_evaluator)
                 save_json(metrics, metrics_file_path)
+
 
 
 if __name__ == "__main__":

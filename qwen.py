@@ -10,7 +10,7 @@ import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def load_qwen():
+def load_model():
     model = None
 
     if device == "cuda":
@@ -32,12 +32,12 @@ def load_qwen():
     return model
 
 
-def load_qwen_processor():
+def load_processor():
     processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
     return processor
 
 
-def qwen_message_template(text, image_url):
+def message_template(text, image_url):
     message = {
         "role": "user",
         "content": [
@@ -52,7 +52,7 @@ def qwen_message_template(text, image_url):
     return message
 
 
-def qwen_response(model: Qwen2_5_VLForConditionalGeneration,
+def response(model: Qwen2_5_VLForConditionalGeneration,
                    processor: AutoProcessor, messages:list):
     # The default range for the number of visual tokens per image in the model is 4-16384.
     # You can set min_pixels and max_pixels according to your needs, such as a token range of 256-1280, to balance performance and cost.
@@ -90,11 +90,11 @@ def qwen_response(model: Qwen2_5_VLForConditionalGeneration,
 
 if __name__ == "__main__":
     from dataset import load_local_dataset
-    model = load_qwen()
-    processor = load_qwen_processor()
+    model = load_model()
+    processor = load_processor()
 
     corpus, queries, qrels = load_local_dataset('vidore/docvqa_test_subsampled_beir')
     
-    messages = [qwen_message_template("What is this?", corpus[0]['image'])]
-    response = qwen_response(model, processor, messages)
+    messages = [message_template("What is this?", corpus[0]['image'])]
+    response = response(model, processor, messages)
     print(response)

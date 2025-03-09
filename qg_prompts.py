@@ -6,7 +6,7 @@ QG_PROMPTS = {
         "content": [
             {
                 "type": "image",
-                "image": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
+                "image": {corpus_image},
             },
             {
                 "type": "text",

@@ -52,8 +52,12 @@ def message_template(text, image_url):
     return message
 
 
-def response(model: Qwen2_5_VLForConditionalGeneration,
-                   processor: AutoProcessor, messages:list):
+def response(
+    model: Qwen2_5_VLForConditionalGeneration,
+    processor: AutoProcessor,
+    messages: list,
+    p_level: float,
+):
     # The default range for the number of visual tokens per image in the model is 4-16384.
     # You can set min_pixels and max_pixels according to your needs, such as a token range of 256-1280, to balance performance and cost.
     # min_pixels = 256*28*28
@@ -75,7 +79,11 @@ def response(model: Qwen2_5_VLForConditionalGeneration,
     inputs = inputs.to(device)
 
     # Inference: Generation of the output
-    generated_ids = model.generate(**inputs, max_new_tokens=128)
+    generated_ids = model.generate(
+        **inputs,
+        max_new_tokens=128,
+        top_p=p_level,
+    )
     generated_ids_trimmed = [
         out_ids[len(in_ids) :]
         for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
@@ -88,13 +96,15 @@ def response(model: Qwen2_5_VLForConditionalGeneration,
 
     return output_text
 
+
 if __name__ == "__main__":
     from dataset import load_local_dataset
+
     model = load_model()
     processor = load_processor()
 
-    corpus, queries, qrels = load_local_dataset('vidore/docvqa_test_subsampled_beir')
-    
-    messages = [message_template("What is this?", corpus[0]['image'])]
+    corpus, queries, qrels = load_local_dataset("vidore/docvqa_test_subsampled_beir")
+
+    messages = [message_template("What is this?", corpus[0]["image"])]
     response = response(model, processor, messages)
     print(response)

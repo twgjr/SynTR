@@ -1,35 +1,54 @@
 import qwen
 from datasets import Dataset
-from dataset import load_local_dataset
+from dataset import load_local_dataset, dataset_names
+from vidore import save_json
+import os
+import json
+from tqdm import tqdm
 
 SEED = 42
 
-def generate(corpus: Dataset, num_docs=100, num_queries=10):
+def generate(corpus: Dataset, model, processor, num_docs=100, num_queries=10):
     """
     Generate pseudo queries and relevance list from sub sample of the corpus.
     """
-    model = qwen.load_model()
-    processor = qwen.load_processor()
     samples = corpus.shuffle(seed=SEED).select(range(num_docs))
     
     psuedo_queries = [] # ('query-id', 'query')
     pseudo_qrel = [] # ('query-id', 'corpus-id', 'score')
 
-    for d in range(num_docs):
+    for d in tqdm(range(num_docs), desc="Processing image"):
         corpus_id = samples[d]['corpus-id']
-        for q in range(num_queries):
+        for q in tqdm(range(num_queries), desc=f"Generating queries"):
             prompt = "Generate a question that the following image can answer. Avoid generating general questions."
             messages = [qwen.message_template(prompt, samples[d]['image'])]
             pseudo_query = qwen.response(model, processor, messages)
-            psuedo_queries.append((q, pseudo_query))
-            pseudo_qrel.append((q, corpus_id, 1))
+            psuedo_queries.append({'query-id': q, 'query':pseudo_query})
+            pseudo_qrel.append({'query-id': q, 'query': corpus_id, 'score': 1})
 
     return psuedo_queries, pseudo_qrel
 
+def save_pseudos(psuedo_queries, pseudo_qrel, path):
+    # Save to a JSON file
+    with open(os.path.join(path, 'pseudo_qrel.json'), 'w') as f:
+        json.dump(pseudo_qrel, f, indent=4)
+    
+    with open(os.path.join(path, 'pseudo_queries.json'), 'w') as f:
+        json.dump(psuedo_queries, f, indent=4)
+
+def generate_all():
+    NUM_DOCS = 100
+    NUM_QUERIES = 10
+
+    model = qwen.load_model()
+    processor = qwen.load_processor()
+
+    for name in tqdm(dataset_names, desc="Processing dataset"):
+        corpus, _, _ = load_local_dataset(name)
+        psuedo_queries, pseudo_qrel = generate(
+            corpus, model, processor, num_docs=NUM_DOCS, num_queries=NUM_QUERIES)
+        save_pseudos(psuedo_queries, pseudo_qrel, name)
+
 
 if __name__ == "__main__":
-    from dataset import load_local_dataset
-    corpus, _, _ = load_local_dataset("vidore/docvqa_test_subsampled_beir")
-    psuedo_queries, pseudo_qrel = generate(corpus, num_docs=2, num_queries=2)
-    print(psuedo_queries)
-    print(pseudo_qrel)
+    generate_all()

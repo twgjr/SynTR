@@ -13,3 +13,7 @@
 
 * `conda create -n qwen python=3.13`
 * `pip install  git+https://github.com/huggingface/transformers torchvision qwen-vl-utils`
+
+# Requirements
+
+* VRAM above 60GB.  Recommend running on 80GB A100 or H100

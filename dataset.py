@@ -1,5 +1,7 @@
 from datasets import load_dataset, load_from_disk
 import os
+from PIL import Image
+import io
 
 dataset_names = [
     'vidore/docvqa_test_subsampled_beir',
@@ -25,7 +27,42 @@ def load_local_dataset(name):
     qrels = load_from_disk(os.path.join(name, 'qrels'))
     return corpus, queries, qrels
 
+# Function to extract area
+def extract_area(image_binary):
+    image = Image.open(io.BytesIO(image_binary["bytes"]))
+    width, height = image.size
+    return width * height  # Returning area as a single value
+
+def find_max_min_area(image_corpus):
+    # Convert dataset to pandas DataFrame
+    df = image_corpus.to_pandas()
+
+    # Compute area column
+    df["area"] = df["image"].apply(lambda img: extract_area(img))
+
+    # Get max and min areas
+    max_area = df["area"].max()
+    min_area = df["area"].min()
+
+    return max_area, min_area
+
+def find_image_range():
+    areas = []
+    for name in dataset_names:
+        corpus, queries, qrels = load_local_dataset(name)
+        areas.append(find_max_min_area(corpus))  # Ensure corpus is passed correctly
+
+    # Extract max and min separately
+    max_areas = [area[0] for area in areas]
+    min_areas = [area[1] for area in areas]
+
+    print(f'Max image pixels = {max(max_areas)}')
+    print(f'Min image pixels = {min(min_areas)}')
+
+
 if __name__ == '__main__':
+    find_image_range()
+    
     for name in dataset_names:
         if not os.path.exists(name):
             download_dataset(name)

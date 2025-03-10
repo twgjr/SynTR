@@ -45,8 +45,7 @@ def message_template(text, image_url):
 def response(
     model: Qwen2_5_VLForConditionalGeneration,
     processor: AutoProcessor,
-    messages: list,
-    p_level: float,  # 0.9 per LARMOR paper
+    messages: list
 ):
     # The default range for the number of visual tokens per image in the model is 4-16384.
     # You can set min_pixels and max_pixels according to your needs, such as a token range of 256-1280, to balance performance and cost.
@@ -87,7 +86,7 @@ def response(
         clean_up_tokenization_spaces=False,
     )
 
-    return output_text
+    return output_text[0]
 
 
 if __name__ == "__main__":
@@ -99,5 +98,5 @@ if __name__ == "__main__":
     corpus, queries, qrels = load_local_dataset("vidore/docvqa_test_subsampled_beir")
 
     messages = [message_template("What is this?", corpus[0]["image"])]
-    response = response(model, processor, messages, p_level=0.9)
+    response = response(model, processor, messages)
     print(response)

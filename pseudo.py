@@ -67,5 +67,5 @@ def generate_all():
 
 if __name__ == "__main__":
     # generate_all()
-    rename("vidore/docvqa_test_subsampled_beir/pseudo_qrel_truth.json", "query", "corpus-id")
-    rename("vidore/tadqa_test_beir/pseudo_qrel_truth.json", "query", "corpus-id")
+    rename_json_field("vidore/docvqa_test_subsampled_beir/pseudo_qrel_truth.json", "query", "corpus-id")
+    rename_json_field("vidore/tadqa_test_beir/pseudo_qrel_truth.json", "query", "corpus-id")

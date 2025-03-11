@@ -1,32 +1,43 @@
 import os
 import json
 import torch
-from colpali_engine.models import ColQwen2, ColQwen2Processor, \
-                                ColQwen2_5, ColQwen2_5_Processor, \
-                                ColIdefics3, ColIdefics3Processor, \
-                                ColPali, ColPaliProcessor
-from transformers import AutoModel, AutoProcessor, \
-                        Qwen2VLForConditionalGeneration, \
-                        AutoProcessor
+from colpali_engine.models import (
+    ColQwen2,
+    ColQwen2Processor,
+    ColQwen2_5,
+    ColQwen2_5_Processor,
+    ColIdefics3,
+    ColIdefics3Processor,
+    ColPali,
+    ColPaliProcessor,
+)
+from transformers import (
+    AutoProcessor,
+    Qwen2VLForConditionalGeneration,
+    AutoProcessor,
+)
 
 from dataset import dataset_names, load_local_dataset
 
-from vidore_benchmark.evaluation.vidore_evaluators.vidore_evaluator_beir import ViDoReEvaluatorBEIR, BEIRDataset
+from vidore_benchmark.evaluation.vidore_evaluators.vidore_evaluator_beir import (
+    ViDoReEvaluatorBEIR,
+    BEIRDataset,
+)
 from vidore_benchmark.retrievers import VisionRetriever
 
 BATCH_SIZE = 4
 
 models = {
-    "Metric-AI/ColQwen2.5-3b-multilingual-v1.0":[ColQwen2_5,ColQwen2_5_Processor],
-    "Metric-AI/colqwen2.5-3b-multilingual":[ColQwen2_5,ColQwen2_5_Processor],
+    "Metric-AI/ColQwen2.5-3b-multilingual-v1.0": [ColQwen2_5, ColQwen2_5_Processor],
+    "Metric-AI/colqwen2.5-3b-multilingual": [ColQwen2_5, ColQwen2_5_Processor],
     # below model requires remote code trust, security risk
     # "Metric-AI/ColQwenStella-2b-multilingual":[AutoModel, AutoProcessor],
     "tsystems/colqwen2-2b-v1.0": [ColQwen2, ColQwen2Processor],
-    "vidore/colqwen2.5-v0.2":[ColQwen2_5,ColQwen2_5_Processor],
+    "vidore/colqwen2.5-v0.2": [ColQwen2_5, ColQwen2_5_Processor],
     "vidore/colqwen2-v1.0": [ColQwen2, ColQwen2Processor],
-    "vidore/colqwen2.5-v0.1":[ColQwen2_5,ColQwen2_5_Processor],
+    "vidore/colqwen2.5-v0.1": [ColQwen2_5, ColQwen2_5_Processor],
     "vidore/colqwen2-v0.1": [ColQwen2, ColQwen2Processor],
-    "vidore/colsmolvlm-v0.1":[ColIdefics3, ColIdefics3Processor],
+    "vidore/colsmolvlm-v0.1": [ColIdefics3, ColIdefics3Processor],
     "MrLight/dse-qwen2-2b-mrl-v1": [AutoProcessor, Qwen2VLForConditionalGeneration],
     "vidore/colpali2-3b-pt-448": [ColPali, ColPaliProcessor],
     "vidore/colSmol-500M": [ColIdefics3, ColIdefics3Processor],
@@ -43,10 +54,7 @@ def get_processor_instance(model_name):
     return instance
 
 
-
 def get_model_instance(model_name):
-    # all models inherit from PreTrainedModel so support load_in_4bit and 
-    # load_in_8bit methods
     model_class = models[model_name][0]
 
     try:
@@ -77,13 +85,18 @@ def get_vidore_evaluator(vision_retriever):
     return evaluator
 
 
-def test_vidore_evaluator(dataset_name, batch_size, vidore_evaluator: ViDoReEvaluatorBEIR):
+def test_vidore_evaluator(
+    dataset_name, batch_size, vidore_evaluator: ViDoReEvaluatorBEIR, use_pseudo
+):
     # Evaluate on a single dataset
-    corpus, queries, qrels = load_local_dataset(dataset_name)
+    corpus, queries, qrels = load_local_dataset(dataset_name, use_pseudo)
     ds = BEIRDataset(corpus=corpus, queries=queries, qrels=qrels)
     try:
         metrics = vidore_evaluator.evaluate_dataset(
-            ds=ds, batch_query=batch_size, batch_passage=batch_size, batch_score=batch_size
+            ds=ds,
+            batch_query=batch_size,
+            batch_passage=batch_size,
+            batch_score=batch_size,
         )
     except Exception as e:
         print(f"Problem running ViDoReEvaluatorBEIR: {e}")
@@ -95,8 +108,7 @@ def save_json(metrics, path):
         json.dump(metrics, f, indent=4)
 
 
-def evaluate_all_models():
-    metrics_dir = "metrics"
+def evaluate_all_models(metrics_dir, use_pseudo):
     if not os.path.exists(metrics_dir):
         os.makedirs(metrics_dir)
 
@@ -110,13 +122,15 @@ def evaluate_all_models():
         vidore_evaluator = get_vidore_evaluator(vision_retriever)
         for vidore_path in dataset_names:
             vidore_name = os.path.basename(vidore_path)
-            metrics_file_path = os.path.join(metrics_model_dir, vidore_name + '.json')
+            metrics_file_path = os.path.join(metrics_model_dir, vidore_name + ".json")
             if not os.path.exists(metrics_file_path):
                 metrics = test_vidore_evaluator(
-                    vidore_path, BATCH_SIZE, vidore_evaluator)
+                    vidore_path, BATCH_SIZE, vidore_evaluator, use_pseudo
+                )
                 save_json(metrics, metrics_file_path)
 
 
-
 if __name__ == "__main__":
-    evaluate_all_models()
+    # skips any model/collection pair that is already evaluated
+    evaluate_all_models("metrics", use_pseudo=False)
+    evaluate_all_models("psuedo_metrics", use_pseudo=True)

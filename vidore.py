@@ -38,7 +38,8 @@ models = {
     "vidore/colqwen2.5-v0.1": [ColQwen2_5, ColQwen2_5_Processor],
     "vidore/colqwen2-v0.1": [ColQwen2, ColQwen2Processor],
     "vidore/colsmolvlm-v0.1": [ColIdefics3, ColIdefics3Processor],
-    "MrLight/dse-qwen2-2b-mrl-v1": [AutoProcessor, Qwen2VLForConditionalGeneration],
+    # compatibility error
+    # "MrLight/dse-qwen2-2b-mrl-v1": [AutoProcessor, Qwen2VLForConditionalGeneration],
     "vidore/colpali2-3b-pt-448": [ColPali, ColPaliProcessor],
     "vidore/colSmol-500M": [ColIdefics3, ColIdefics3Processor],
     "vidore/ColSmolVLM-Instruct-500M-base": [ColIdefics3, ColIdefics3Processor],
@@ -116,18 +117,18 @@ def evaluate_all_models(metrics_dir, use_pseudo):
         metrics_model_dir = os.path.join(metrics_dir, model_name)
         if not os.path.exists(metrics_model_dir):
             os.makedirs(metrics_model_dir)
-        processor = get_processor_instance(model_name)
-        model = get_model_instance(model_name)
-        vision_retriever = get_retriever_instance(model, processor)
-        vidore_evaluator = get_vidore_evaluator(vision_retriever)
-        for vidore_path in dataset_names:
-            vidore_name = os.path.basename(vidore_path)
-            metrics_file_path = os.path.join(metrics_model_dir, vidore_name + ".json")
-            if not os.path.exists(metrics_file_path):
-                metrics = test_vidore_evaluator(
-                    vidore_path, BATCH_SIZE, vidore_evaluator, use_pseudo
-                )
-                save_json(metrics, metrics_file_path)
+            processor = get_processor_instance(model_name)
+            model = get_model_instance(model_name)
+            vision_retriever = get_retriever_instance(model, processor)
+            vidore_evaluator = get_vidore_evaluator(vision_retriever)
+            for vidore_path in dataset_names:
+                vidore_name = os.path.basename(vidore_path)
+                metrics_file_path = os.path.join(metrics_model_dir, vidore_name + ".json")
+                if not os.path.exists(metrics_file_path):
+                    metrics = test_vidore_evaluator(
+                        vidore_path, BATCH_SIZE, vidore_evaluator, use_pseudo
+                    )
+                    save_json(metrics, metrics_file_path)
 
 
 if __name__ == "__main__":

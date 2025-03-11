@@ -31,11 +31,14 @@ def generate(corpus: Dataset, model, processor, num_docs=50, num_queries=5):
 
 def save_pseudos(psuedo_queries, pseudo_qrel, path):
     # Save to a JSON file
-    with open(os.path.join(path, "pseudo_qrel.json"), "w") as f:
+    with open(os.path.join(path, "pseudo_qrel_truth.json"), "w") as f:
         json.dump(pseudo_qrel, f, indent=4)
 
     with open(os.path.join(path, "pseudo_queries.json"), "w") as f:
         json.dump(psuedo_queries, f, indent=4)
+
+def rename(path, field_name, new_name):
+    
 
 
 def generate_all():
@@ -46,7 +49,7 @@ def generate_all():
     processor = qwen.load_processor()
 
     for name in tqdm(dataset_names, desc="Processing dataset"):
-        if os.path.exists(os.path.join(name, "pseudo_qrel.json")) and \
+        if os.path.exists(os.path.join(name, "pseudo_qrel_truth.json")) and \
             os.path.exists(os.path.join(name, "pseudo_queries.json")):
             print(f"Pseudo queries and relevance list already exists for {name}. Skipping...")
             continue

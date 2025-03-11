@@ -14,6 +14,9 @@
 * `conda create -n qwen python=3.13`
 * `pip install  git+https://github.com/huggingface/transformers torchvision qwen-vl-utils`
 
+## indexing and similarity
+* `conda install -c pytorch -c nvidia faiss-gpu=1.10.0`
+
 # Requirements
 
 * VRAM above 60GB.  Recommend running on 80GB A100 or H100

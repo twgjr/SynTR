@@ -1,5 +1,4 @@
 import os
-import json
 import torch
 from colpali_engine.models import (
     ColQwen2,
@@ -11,13 +10,8 @@ from colpali_engine.models import (
     ColPali,
     ColPaliProcessor,
 )
-from transformers import (
-    AutoProcessor,
-    Qwen2VLForConditionalGeneration,
-    AutoProcessor,
-)
 
-from dataset import dataset_names, load_local_dataset
+from dataset import COLLECTIONS, load_local_dataset
 from utils import save_json
 
 from vidore_benchmark.evaluation.vidore_evaluators.vidore_evaluator_beir import (
@@ -28,7 +22,7 @@ from vidore_benchmark.retrievers import VisionRetriever
 
 BATCH_SIZE = 4
 
-models = {
+MODELS = {
     "Metric-AI/ColQwen2.5-3b-multilingual-v1.0": [ColQwen2_5, ColQwen2_5_Processor],
     "Metric-AI/colqwen2.5-3b-multilingual": [ColQwen2_5, ColQwen2_5_Processor],
     # below model requires remote code trust, security risk
@@ -48,7 +42,7 @@ models = {
 
 
 def get_processor_instance(model_name):
-    processor_class = models[model_name][1]
+    processor_class = MODELS[model_name][1]
     try:
         instance = processor_class.from_pretrained(model_name)
     except Exception as e:
@@ -57,7 +51,7 @@ def get_processor_instance(model_name):
 
 
 def get_model_instance(model_name):
-    model_class = models[model_name][0]
+    model_class = MODELS[model_name][0]
 
     try:
         instance = model_class.from_pretrained(
@@ -65,10 +59,12 @@ def get_model_instance(model_name):
             torch_dtype=torch.bfloat16,
             device_map="cuda",
         ).eval()
+        return instance
     except Exception as e:
         print(f"Problem with getting pretrained model: {e}")
+        # rethrow
+        raise e
 
-    return instance
 
 
 def get_retriever_instance(model, processor):
@@ -109,7 +105,7 @@ def evaluate_all_models(metrics_dir, use_pseudo):
     if not os.path.exists(metrics_dir):
         os.makedirs(metrics_dir)
 
-    for model_name in models:
+    for model_name in MODELS:
         metrics_model_dir = os.path.join(metrics_dir, model_name)
         if not os.path.exists(metrics_model_dir):
             os.makedirs(metrics_model_dir)
@@ -117,7 +113,7 @@ def evaluate_all_models(metrics_dir, use_pseudo):
             model = get_model_instance(model_name)
             vision_retriever = get_retriever_instance(model, processor)
             vidore_evaluator = get_vidore_evaluator(vision_retriever)
-            for vidore_path in dataset_names:
+            for vidore_path in COLLECTIONS:
                 vidore_name = os.path.basename(vidore_path)
                 metrics_file_path = os.path.join(metrics_model_dir, vidore_name + ".json")
                 if not os.path.exists(metrics_file_path):

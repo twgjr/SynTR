@@ -18,3 +18,4 @@ def save_json(metrics, path):
 if __name__ == "__main__":
     # rename_json_field("vidore/docvqa_test_subsampled_beir/pseudo_qrel_truth.json", "query", "corpus-id")
     # rename_json_field("vidore/tatdqa_test_beir/pseudo_qrel_truth.json", "query", "corpus-id")
+    pass

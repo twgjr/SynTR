@@ -1,6 +1,6 @@
 import qwen
 from datasets import Dataset
-from dataset import load_local_dataset, dataset_names
+from dataset import load_local_dataset, COLLECTIONS
 import os
 import json
 from tqdm import tqdm
@@ -45,7 +45,7 @@ def generate_all():
     model = qwen.load_model()
     processor = qwen.load_processor()
 
-    for name in tqdm(dataset_names, desc="Processing dataset"):
+    for name in tqdm(COLLECTIONS, desc="Processing dataset"):
         if os.path.exists(os.path.join(name, "pseudo_qrel_truth.json")) and \
             os.path.exists(os.path.join(name, "pseudo_queries.json")):
             print(f"Pseudo queries and relevance list already exists for {name}. Skipping...")

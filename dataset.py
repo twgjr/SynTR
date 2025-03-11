@@ -3,7 +3,7 @@ import os
 from PIL import Image
 import io
 
-dataset_names = [
+COLLECTIONS = [
     "vidore/docvqa_test_subsampled_beir",
     "vidore/tatdqa_test_beir",
 ]
@@ -59,7 +59,7 @@ def find_max_min_area(image_corpus):
 
 def find_image_range():
     areas = []
-    for name in dataset_names:
+    for name in COLLECTIONS:
         corpus, _, _ = load_local_dataset(name)
         areas.append(find_max_min_area(corpus))  # Ensure corpus is passed correctly
 
@@ -74,7 +74,7 @@ def find_image_range():
 if __name__ == "__main__":
     find_image_range()
 
-    for name in dataset_names:
+    for name in COLLECTIONS:
         if not os.path.exists(name):
             download_dataset(name)
         corpus, queries, qrels = load_local_dataset(name)

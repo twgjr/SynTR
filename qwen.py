@@ -23,15 +23,15 @@ def load_model(model_name="Qwen/Qwen2.5-VL-7B-Instruct-AWQ"):
 
 
 def load_processor(model_name="Qwen/Qwen2.5-VL-7B-Instruct-AWQ"):
-    # The default range for the number of visual tokens per image in the model is 4-16384.
-    # You can set min_pixels and max_pixels according to your needs, such as a token range of 256-1280, to balance performance and cost.
+    # min-max pixels determined over the vidore collections
+    # max pixels can be further reduce to fit into smaller RAM GPU or faster processing
+    # with accuracy tradeoff
     min_pixels = 149000
-    max_pixels = 67958100
+    max_pixels = int(67958100 / 64) # max reduced by factor of 64 due to GPU OOM @ 80GB
     processor = AutoProcessor.from_pretrained(
         model_name, min_pixels=min_pixels, max_pixels=max_pixels
     )
 
-    # processor = AutoProcessor.from_pretrained(model_name)
     return processor
 
 

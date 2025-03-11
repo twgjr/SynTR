@@ -24,7 +24,7 @@ def generate(corpus: Dataset, model, processor, num_docs=50, num_queries=5):
             messages = [qwen.message_template(prompt, samples[d]["image"])]
             pseudo_query = qwen.response(model, processor, messages)
             psuedo_queries.append({"query-id": q, "query": pseudo_query})
-            pseudo_qrel.append({"query-id": q, "query": corpus_id, "score": 1})
+            pseudo_qrel.append({"query-id": q, "corpus-id": corpus_id, "score": 1})
 
     return psuedo_queries, pseudo_qrel
 
@@ -50,11 +50,11 @@ def generate_all():
             os.path.exists(os.path.join(name, "pseudo_queries.json")):
             print(f"Pseudo queries and relevance list already exists for {name}. Skipping...")
             continue
-        # corpus, _, _ = load_local_dataset(name)
-        # psuedo_queries, pseudo_qrel = generate(
-        #     corpus, model, processor, num_docs=NUM_DOCS, num_queries=NUM_QUERIES
-        # )
-        # save_pseudos(psuedo_queries, pseudo_qrel, name)
+        corpus, _, _ = load_local_dataset(name, use_pseudo=False)
+        psuedo_queries, pseudo_qrel = generate(
+            corpus, model, processor, num_docs=NUM_DOCS, num_queries=NUM_QUERIES
+        )
+        save_pseudos(psuedo_queries, pseudo_qrel, name)
 
 
 if __name__ == "__main__":

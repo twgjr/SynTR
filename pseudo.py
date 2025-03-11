@@ -37,14 +37,6 @@ def save_pseudos(psuedo_queries, pseudo_qrel, path):
     with open(os.path.join(path, "pseudo_queries.json"), "w") as f:
         json.dump(psuedo_queries, f, indent=4)
 
-def rename_json_field(path, field_name, new_name):
-    with open(path, "r") as f:
-        data = json.load(f)
-    for item in data:
-        item[new_name] = item.pop(field_name)
-    with open(os.path.join(os.path.dirname(path), os.path.basename(path)+"_new.json"), "w") as f:
-        json.dump(data, f, indent=4)
-
 
 def generate_all():
     NUM_DOCS = 50
@@ -66,6 +58,4 @@ def generate_all():
 
 
 if __name__ == "__main__":
-    # generate_all()
-    rename_json_field("vidore/docvqa_test_subsampled_beir/pseudo_qrel_truth.json", "query", "corpus-id")
-    rename_json_field("vidore/tadqa_test_beir/pseudo_qrel_truth.json", "query", "corpus-id")
+    generate_all()

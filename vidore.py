@@ -18,6 +18,7 @@ from transformers import (
 )
 
 from dataset import dataset_names, load_local_dataset
+from utils import save_json
 
 from vidore_benchmark.evaluation.vidore_evaluators.vidore_evaluator_beir import (
     ViDoReEvaluatorBEIR,
@@ -102,11 +103,6 @@ def test_vidore_evaluator(
     except Exception as e:
         print(f"Problem running ViDoReEvaluatorBEIR: {e}")
     return metrics
-
-
-def save_json(metrics, path):
-    with open(path, "w") as f:
-        json.dump(metrics, f, indent=4)
 
 
 def evaluate_all_models(metrics_dir, use_pseudo):

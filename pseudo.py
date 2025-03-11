@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 SEED = 42
 
-def generate(corpus: Dataset, model, processor, num_docs=100, num_queries=10):
+def generate(corpus: Dataset, model, processor, num_docs=50, num_queries=5):
     """
     Generate pseudo queries and relevance list from sub sample of the corpus.
     """
@@ -37,8 +37,8 @@ def save_pseudos(psuedo_queries, pseudo_qrel, path):
         json.dump(psuedo_queries, f, indent=4)
 
 def generate_all():
-    NUM_DOCS = 100
-    NUM_QUERIES = 10
+    NUM_DOCS = 50
+    NUM_QUERIES = 5
 
     model = qwen.load_model()
     processor = qwen.load_processor()

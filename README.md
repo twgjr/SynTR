@@ -1,4 +1,13 @@
+# ViLARMoR (Vision Language Model Assisted Retriever Model Ranking)
+
+This project was developed independently of the code base for LARMOR and as an extension of LARMOR.  It extends LARMOR from text only into vision-language domain.  Though it follows some of the same conventions.  
+
+The original LARMOR research:
+* code: https://github.com/ielab/larmor
+* paper: https://arxiv.org/pdf/2402.04853
+
 # Installation
+Install the following dependencies before running the script.  Otherwise everything is handled by the script.
 
 ## Dependencies for ViDoRe Benchmark
 
@@ -9,14 +18,11 @@
 * `pip install autoawq`
 * Install colpali-engine from source to include ColQwen2.5: `pip install git+https://github.com/illuin-tech/colpali`
 
-## Pseudo Query Generation and Relevance Judgements
 
-* `conda create -n qwen python=3.13`
-* `pip install  git+https://github.com/huggingface/transformers torchvision qwen-vl-utils`
+# Hardware Requirements
 
-## indexing and similarity
-* `conda install -c pytorch -c nvidia faiss-gpu=1.10.0`
+VRAM above 65GB.  Tested on a single 80GB A100 or H100 NVIDIA GPU.
 
-# Requirements
+# Usage
 
-* VRAM above 60GB.  Recommend running on 80GB A100 or H100
+Run the python file `run_vilarmor.py` to process the entire ViLARMOR pipeline including downloading necessary datasets.

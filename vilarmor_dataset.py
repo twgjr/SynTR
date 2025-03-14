@@ -3,31 +3,42 @@ import os
 import json
 from PIL import Image
 import io
+from pandas import DataFrame
 from vidore_benchmark.evaluation.vidore_evaluators.vidore_evaluator_beir import (
     BEIRDataset,
 )
-from pseudo import PseudoQueryGenerator
+from pseudo_query import PseudoQueryGenerator
 from datasets import Dataset
 
 COLLECTIONS = [
     "vidore/docvqa_test_subsampled_beir",
-    "vidore/tatdqa_test_beir",
+    # "vidore/tatdqa_test_beir",
 ]
 
 
 class ViLARMoRDataset:
-    def __init__(self, name):
+    def __init__(self, name, num_images, num_pqueries, temperature=1.0, 
+                top_p=0.9):
         self.name = name
         self.corpus: Dataset = None
         self.queries: Dataset = None
         self.qrels: Dataset = None
 
         if not os.path.exists(name):
-            self.download_corpus()
+            # download, generate and save
+            corpus = self.download_corpus()
             generator = PseudoQueryGenerator()
-            generator.generate(name, self.corpus)
-        else:
-            self.load_local_dataset()
+            psuedo_queries, gen_qd_pairs = generator.generate(
+                dataset_name=self.name, 
+                corpus=corpus, 
+                top_p=top_p, 
+                temperature=temperature, 
+                num_docs=num_images, 
+                num_queries=num_pqueries,
+                )
+            self.save_pseudos(psuedo_queries, gen_qd_pairs)
+        
+        self.load_local_dataset()
 
     def to_beir_dataset(self) -> BEIRDataset:
         return BEIRDataset(
@@ -38,17 +49,18 @@ class ViLARMoRDataset:
 
     def download_corpus(self):
         try:
-            self.corpus = load_dataset(self.name, "corpus", split="test")
+            corpus = load_dataset(self.name, "corpus", split="test")
         except Exception as e:
             print(f"Failed to download dataset {self.name}: {e}")
 
         # save to prefetch the data to speed up the evaluation
-        self.corpus.save_to_disk(os.path.join(self.name, "corpus"))
+        corpus.save_to_disk(os.path.join(self.name, "corpus"))
+        return corpus
 
-    def save_pseudos(self, psuedo_queries, pseudo_qrel):
+    def save_pseudos(self, psuedo_queries, gen_qd_pairs):
         # Save to a JSON file
-        with open(os.path.join(self.name, "pseudo_qrel.json"), "w") as f:
-            json.dump(pseudo_qrel, f, indent=4)
+        with open(os.path.join(self.name, "gen_qd_pairs.json"), "w") as f:
+            json.dump(gen_qd_pairs, f, indent=4)
 
         with open(os.path.join(self.name, "pseudo_queries.json"), "w") as f:
             json.dump(psuedo_queries, f, indent=4)
@@ -56,9 +68,28 @@ class ViLARMoRDataset:
     def load_local_dataset(self):
         self.corpus = load_from_disk(os.path.join(self.name, "corpus"))
         pq_path = os.path.join(self.name, "pseudo_queries.json")
-        self.queries = load_dataset("json", data_files=pq_path)
+        queries = load_dataset("json", data_files=pq_path)
+        self.queries = queries['train']
         pqrel_path = os.path.join(self.name, "pseudo_qrel.json")
-        self.qrels = load_dataset("json", data_files=pqrel_path)
+        if os.path.exists(pqrel_path):
+            qrels = load_dataset("json", data_files=pqrel_path)
+            self.qrels = qrels['train']
+
+    def get_image(self, corpus_df:DataFrame, corpus_id:int):
+        image_map = corpus_df[
+                    corpus_df['corpus-id'] 
+                    == 
+                    corpus_id
+                    ]['image'].values[0]
+        image = Image.open(io.BytesIO(image_map["bytes"]))
+        return image
+
+    def get_query(self, queries_df:DataFrame, query_id:int):
+        query = queries_df[
+                    queries_df['query-id'] 
+                    == query_id
+                    ]['query'].values[0]
+        return query
 
     # Function to extract area
     @staticmethod

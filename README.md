@@ -9,7 +9,7 @@ The original LARMOR research:
 # Installation
 Install the following dependencies before running the script.  Otherwise everything is handled by the script.
 
-## Dependencies for ViDoRe Benchmark
+## Dependencies
 
 * `conda create -n vidore python=3.13`
 * `conda activate vilarmor`
@@ -17,7 +17,7 @@ Install the following dependencies before running the script.  Otherwise everyth
 * `pip install "vidore-benchmark[all-retrievers]"`
 * `pip install autoawq`
 * Install colpali-engine from source to include ColQwen2.5: `pip install git+https://github.com/illuin-tech/colpali`
-
+* `pip install ranx`
 
 # Hardware Requirements
 

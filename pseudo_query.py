@@ -1,34 +1,37 @@
 from vlm import BaseVLM
 from datasets import Dataset
-from vilarmor_dataset import load_local_dataset, COLLECTIONS
 import os
 import json
 from tqdm import tqdm
 
-SEED = 42
+from transformers import set_seed
 
+set_seed(42)
 
 class PseudoQueryGenerator(BaseVLM):
     def __init__(self):
         super().__init__()
 
-    def generate(self, dataset_name: str, corpus: Dataset, num_docs=50, num_queries=5):
+    def generate(self, dataset_name: str, corpus: Dataset, top_p:float, 
+                    temperature:float, num_docs: int, num_queries: int):
         """
         Generate pseudo queries and relevance list from sub sample of the corpus.
         """
-        samples = corpus.shuffle(seed=SEED).select(range(num_docs))
+        samples = corpus.shuffle().select(range(num_docs))
 
         psuedo_queries = []  # ('query-id', 'query')
-        pseudo_qrel = []  # ('query-id', 'corpus-id', 'score')
+        dq_pairs = []
         prompt = "Generate a question that the following image can answer. \
             Avoid generating general questions."
 
         for d in tqdm(range(num_docs), desc=f"Processing {dataset_name}"):
             corpus_id = samples[d]["corpus-id"]
+            
             for q in tqdm(range(num_queries), desc=f"Generating queries"):
+                qid = q + d*num_queries
                 messages = [self.message_template(prompt, samples[d]["image"])]
-                pseudo_query = self.response(messages)
-                psuedo_queries.append({"query-id": q, "query": pseudo_query})
-                pseudo_qrel.append({"query-id": q, "corpus-id": corpus_id, "score": 1})
+                pseudo_query = self.response(messages, top_p, temperature)
+                psuedo_queries.append({"query-id": qid, "query": pseudo_query})
+                dq_pairs.append({"corpus-id": corpus_id, "query-id": qid})
 
-        return psuedo_queries, pseudo_qrel
+        return psuedo_queries, dq_pairs

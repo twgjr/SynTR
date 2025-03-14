@@ -5,7 +5,6 @@ the LARMOR method.
 
 from collections import defaultdict
 import torch
-import heapq
 
 from vidore_benchmark.evaluation.vidore_evaluators.base_vidore_evaluator import (
     BaseViDoReEvaluator,
@@ -19,6 +18,7 @@ from vilarmor_retriever import ViLARMoRRetriever
 from judge import ViLARMoRJudge
 from vilarmor_dataset import ViLARMoRDataset
 
+BATCH_SIZE = 1
 
 class ViLARMoREvaluator(BaseViDoReEvaluator):
     """
@@ -35,81 +35,61 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         self,
         vision_retriever: ViLARMoRRetriever,
         vilarmor_ds: ViLARMoRDataset,
+        num_corpus:int=None # subset of images for testing
     ):
         super().__init__(vision_retriever=vision_retriever)
+        if(num_corpus):
+            vilarmor_ds.corpus = vilarmor_ds.corpus.select(range(num_corpus))
         self.ds: BEIRDataset = vilarmor_ds.to_beir_dataset()
 
         # Dataset column names
         self.corpus_id_column = "corpus-id"
         self.query_id_column = "query-id"
         self.query_column = "query"
-        self.passage_column = "text_description"
-        if self.vision_retriever.use_visual_embedding:
-            self.passage_column = "image"
+        self.passage_column = "image"
         self.score_column = "score"
+        
+    def evaluate_dataset(
+        self, ds, batch_query, batch_passage, batch_score,
+        **kwargs,
+    ) -> dict[str, float | None]:
+        raise NotImplementedError("For benchmark but not needed for ViLARMOR.")
 
-    def _get_retrieval_results(
+    def get_retrieval_results(
         self,
-        query_ids: list[int],
-        passage_ids: list[int],
+        image_ids: list[int],
         scores: torch.Tensor,
-        top_k: int = None,  # Optional: Limit to top-k results per query
     ) -> dict[str, dict[str, float]]:
-        """
-        Get the retrieval results using a max-heap to keep the highest scores at the top.
 
-        Args:
-            query_ids (list[int]): The list of query IDs.
-            passage_ids (list[int]): The list of passage IDs.
-            scores (torch.Tensor): The similarity scores between queries and passages.
-            top_k (int, optional): If set, keeps only the top-k highest scores per query.
+        best_image_scores = {}
+        for image_id in image_ids:
+            image_key = str(image_id)
+            best_image_scores[image_key] = torch.max(scores[:,image_id]).item()
 
-        Returns:
-            dict[str, dict[str, float]]: The retrieval results sorted in descending order.
-        """
-        results = {}  # Dictionary to store query results
-        heap_store = {}  # Dictionary to store heaps per query
+        sorted_images = dict(sorted(best_image_scores.items(), key=lambda item: item[1]))
 
-        for query_idx, query_id in enumerate(query_ids):
-            query_key = str(query_id)
+        print(sorted_images)
 
-            if query_key not in heap_store:
-                heap_store[query_key] = []  # Initialize a heap for the query
+        return sorted_images[:100] # only m=100 top ranked images
 
-            for passage_idx, score in enumerate(scores[query_idx]):
-                passage_id = str(passage_ids[passage_idx])
-                score_value = float(score.item())
-
-                # Use a min-heap with negative scores to simulate a max-heap
-                heapq.heappush(heap_store[query_key], (-score_value, passage_id))
-
-                # If a top_k limit is set, maintain only top_k elements
-                if top_k and len(heap_store[query_key]) > top_k:
-                    heapq.heappop(heap_store[query_key])  # Remove the lowest score
-
-        # Convert heaps into sorted dictionaries
-        for query_key, heap in heap_store.items():
-            sorted_scores = sorted(
-                heap, reverse=True
-            )  # Convert back to descending order
-            results[query_key] = {pid: -score for score, pid in sorted_scores}
-
-        return results
-
-    def _rank(
+    def rank(
         self,
         batch_query: int,
         batch_passage: int,
         batch_score: int | None = None,
         dataloader_prebatch_query: int | None = None,
         dataloader_prebatch_passage: int | None = None,
-    ) -> dict[str, dict[str, float]]:
+    ) -> list[str]:
+        """
+        Get ranked list of relevant documents using psuedo queries.
+        Returns a list of documents sorted by decending relevance.
+        """
         # Load datasets
         ds_corpus = self.ds["corpus"]
         ds_queries = self.ds["queries"]
 
         # Get image data
-        passage_ids: list[int] = ds_corpus[self.corpus_id_column]
+        image_ids: list[int] = ds_corpus[self.corpus_id_column]
 
         # Get query data
         query_ids: list[int] = ds_queries[self.query_id_column]
@@ -121,6 +101,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
             batch_query=batch_query,
             dataloader_prebatch_size=dataloader_prebatch_query,
         )
+
         passage_embeddings = self._get_passage_embeddings(
             ds=ds_corpus,
             passage_column=self.passage_column,
@@ -129,53 +110,63 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         )
 
         # Get the similarity scores
+        # lower score means more relevant
         scores = self.vision_retriever.get_scores(
             query_embeddings=query_embeddings,
             passage_embeddings=passage_embeddings,
             batch_size=batch_score,
-        )
+        ) # tensor(#queries, #images)
+        
 
-        # Get the relevant passages and results
-        ranking = self._get_retrieval_results(
-            query_ids=query_ids,
-            passage_ids=passage_ids,
+        print(scores)
+
+        # Get the set relevant images 
+        ranking = self.get_retrieval_results(
+            image_ids=image_ids,
             scores=scores,
         )
 
         return ranking
 
-    def _rerank(
-        self, ranking: dict[str, dict[str, float]]
+
+    def pseudo_relevance_judgement(
+        self, ranking: list[int]
     ) -> dict[str, dict[str, float]]:
         """
-        Rerank the results using the judge model by removing irrelevant results.
+        Create a relevance list of the ranked documents using LLM and pseudo queries
         """
         judge = ViLARMoRJudge()
         queries = self.ds["queries"]
-        corpus = self.ds["corpus"]
-        reranking = ranking.copy()
-        for query_id, (corpus_id, rank_val) in ranking.items():
-            query = queries[query_id]
-            image = corpus[corpus_id]
+        corpus_df = self.ds["corpus"].to_pandas()
 
-            if not judge.is_relevant(query, image):
-                del ranking[query_id][corpus_id]
-        return reranking
+        pqrel_list = []   # {"query-id": 1, "corpus-id": 473, "score": 1}
 
-    def _evaluate(self, reranking: dict[str, dict[str, float]]) -> dict[str, float]:
+        for corpus_id in ranking:
+            image = ds.get_image(corpus_df, corpus_id)
+
+            for query_id in range(10):
+                query = ds.get_query(queries_df, query_id)
+                judgment = judge.is_relevant(query, image)
+                pqrel_list.append({
+                    "query-id": query_id, 
+                    "corpus-id": corpus_id, 
+                    "score": judgment,})
+        
+        with open(os.path.join(ds.name,"pqrel.json"), "w") as file:
+            json.dump(pqrel_list, file, indent=4)
+
+        return pqrel_list
+
+    def evaluate(self, pqrel_list: dict[str, dict[str, int]]) -> dict[str, float]:
         """
-        Comptutes array of retrieval scores such as nDCG@10 for the given
-        retriever model and dataset.  The final score for ViLARMoR on a dataset.
-
-        qrels from dataset are the ground truth relevance scores for the pseudo
-        queries generated by VLM.
-
-        reranking is the results of the retrieval model after reranking.
+        Compute the final ranking of NGDC@10 using the relevance qrel and the ranked
+        output from the retrievers
         """
-        ds_qrels = self.ds["qrels"]
+        ds_qrels = Dataset.from_dict()['train']
 
         # Get query relevance data
         qrels: dict[str, dict[str, int]] = defaultdict(dict)
+
         for qrel in ds_qrels:
             # Convert qrels to have the format expected by MTEB.
             # NOTE: The IDs are stored as integers in the dataset.
@@ -196,16 +187,16 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         Run the ViLARMoR evaluation for the given retriever model and dataset.
         """
         # Get the retrieval results
-        ranking = self._rank(
-            batch_query=1,
-            batch_passage=1,
-            batch_score=1,
+        ranking = self.rank(
+            batch_query=BATCH_SIZE,
+            batch_passage=BATCH_SIZE,
+            batch_score=BATCH_SIZE,
         )
 
         # Rerank the results
-        reranking = self._rerank(ranking)
+        pqrel_list = self.pseudo_relevance_judgement(ranking)
 
         # Evaluate the reranked results
-        metrics = self._evaluate(reranking)
+        metrics = self.evaluate(pqrel_list)
 
         return metrics

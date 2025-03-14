@@ -57,6 +57,8 @@ class BaseVLM:
     def response(
         self,
         messages: list,
+        top_p=None,
+        temperature=None,
     ):
         # Preparation for inference
         text = self.processor.apply_chat_template(
@@ -74,14 +76,26 @@ class BaseVLM:
 
         with torch.no_grad():
             # Inference: Generation of the output
-            generated_ids = self.model.generate(
-                **inputs,
-                max_new_tokens=128,
-                do_sample=True,
-                top_p=0.9,
-                top_k=0,  # must set this to allow top_p
-                temperature=1
-            )
+            if top_p == None:
+                # deterministic output, no sampling
+                generated_ids = self.model.generate(
+                    **inputs,
+                    max_new_tokens=128,
+                    do_sample=False,
+                    top_p=None,
+                    top_k=None,
+                    temperature=None
+                )
+            else:
+                # do nucleus sampling with top_p
+                generated_ids = self.model.generate(
+                    **inputs,
+                    max_new_tokens=128,
+                    do_sample=True,
+                    top_p=top_p,
+                    top_k=0,
+                    temperature=temperature
+                )
 
         generated_ids_trimmed = [
             out_ids[len(in_ids) :]

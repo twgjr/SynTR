@@ -2,17 +2,16 @@
 This is based on vidore_evaluator_beir.py with modifications to use with
 the LARMOR method.
 """
-
+import os
+import json
 from collections import defaultdict
 import torch
 
+from datasets import Dataset
 from vidore_benchmark.evaluation.vidore_evaluators.base_vidore_evaluator import (
     BaseViDoReEvaluator,
 )
-
-from vidore_benchmark.evaluation.vidore_evaluators.vidore_evaluator_beir import (
-    BEIRDataset,
-)
+from colpali_engine.utils.processing_utils import BaseVisualRetrieverProcessor
 
 from vilarmor_retriever import ViLARMoRRetriever
 from judge import ViLARMoRJudge
@@ -40,7 +39,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         super().__init__(vision_retriever=vision_retriever)
         if(num_corpus):
             vilarmor_ds.corpus = vilarmor_ds.corpus.select(range(num_corpus))
-        self.ds: BEIRDataset = vilarmor_ds.to_beir_dataset()
+        self.ds: ViLARMoRDataset = vilarmor_ds
 
         # Dataset column names
         self.corpus_id_column = "corpus-id"
@@ -48,7 +47,8 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         self.query_column = "query"
         self.passage_column = "image"
         self.score_column = "score"
-        
+
+
     def evaluate_dataset(
         self, ds, batch_query, batch_passage, batch_score,
         **kwargs,
@@ -91,9 +91,6 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         # Get image data
         image_ids: list[int] = ds_corpus[self.corpus_id_column]
 
-        # Get query data
-        query_ids: list[int] = ds_queries[self.query_id_column]
-
         # Get the embeddings for the queries and passages
         query_embeddings = self._get_query_embeddings(
             ds=ds_queries,
@@ -111,12 +108,10 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
         # Get the similarity scores
         # lower score means more relevant
-        scores = self.vision_retriever.get_scores(
-            query_embeddings=query_embeddings,
-            passage_embeddings=passage_embeddings,
-            batch_size=batch_score,
-        ) # tensor(#queries, #images)
-        
+        scores = BaseVisualRetrieverProcessor.score_single_vector(
+            qs=query_embeddings,
+            ps=passage_embeddings,
+        )
 
         print(scores)
 
@@ -136,33 +131,34 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         Create a relevance list of the ranked documents using LLM and pseudo queries
         """
         judge = ViLARMoRJudge()
-        queries = self.ds["queries"]
-        corpus_df = self.ds["corpus"].to_pandas()
+        queries_df = self.ds.queries.to_pandas()
+        corpus_df = self.ds.corpus.to_pandas()
 
         pqrel_list = []   # {"query-id": 1, "corpus-id": 473, "score": 1}
 
         for corpus_id in ranking:
-            image = ds.get_image(corpus_df, corpus_id)
+            image = self.ds.get_image(corpus_df, corpus_id)
 
-            for query_id in range(10):
-                query = ds.get_query(queries_df, query_id)
+            for query_id in self.ds.queries[self.query_id_column]:
+                query = self.ds.get_query(queries_df, query_id)
                 judgment = judge.is_relevant(query, image)
                 pqrel_list.append({
                     "query-id": query_id, 
                     "corpus-id": corpus_id, 
                     "score": judgment,})
         
-        with open(os.path.join(ds.name,"pqrel.json"), "w") as file:
+        with open(os.path.join(self.ds.name,"pqrel.json"), "w") as file:
             json.dump(pqrel_list, file, indent=4)
 
         return pqrel_list
 
-    def evaluate(self, pqrel_list: dict[str, dict[str, int]]) -> dict[str, float]:
+    def evaluate(self, pqrel_list: dict[str, dict[str, int]],  ranking: list[str]
+                 ) -> dict[str, float]:
         """
         Compute the final ranking of NGDC@10 using the relevance qrel and the ranked
         output from the retrievers
         """
-        ds_qrels = Dataset.from_dict()['train']
+        ds_qrels = Dataset.from_dict(pqrel_list)['train']
 
         # Get query relevance data
         qrels: dict[str, dict[str, int]] = defaultdict(dict)
@@ -176,7 +172,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
         metrics = self.compute_retrieval_scores(
             qrels=qrels,
-            results=reranking,
+            results=ranking,
             ignore_identical_ids=False,
         )
 

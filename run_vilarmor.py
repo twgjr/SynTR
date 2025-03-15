@@ -1,22 +1,41 @@
 import json
-from transformes import set_seed
-from vilarmor_dataset import ViLARMoRDataset, COLLECTIONS
+from transformers import set_seed
 from evaluator import ViLARMoREvaluator
-from vilarmor_retriever import MODELS, ViLARMoRRetriever
+from colpali_engine.models import (
+    ColQwen2,
+    ColQwen2Processor,
+    ColQwen2_5,
+    ColQwen2_5_Processor,
+    ColIdefics3,
+    ColIdefics3Processor,
+    ColPali,
+    ColPaliProcessor,
+)
 
 set_seed(42)  # for consistent testing, sets all seeds for randomness
 
-# load the ViLARMoR datasets
-dataset_list = [ViLARMoRDataset(name) for name in COLLECTIONS]
+DATASETS = [
+    "vidore/docvqa_test_subsampled_beir",
+    # "vidore/tatdqa_test_beir",
+]
 
-# run the ViLARMoR evaluator for each dataset and retriever model
-metrics = {}
-for model_name in MODELS:
-    model = ViLARMoRRetriever(model_name)
-    for dataset in dataset_list:
-        evaluator = ViLARMoREvaluator(model, dataset)
-        metrics[model_name] = evaluator.run()
+MODELS = {
+    "Metric-AI/ColQwen2.5-3b-multilingual-v1.0": [ColQwen2_5, ColQwen2_5_Processor],
+    # "Metric-AI/colqwen2.5-3b-multilingual": [ColQwen2_5, ColQwen2_5_Processor],
+    ## below model requires remote code trust, security risk
+    ## "Metric-AI/ColQwenStella-2b-multilingual":[AutoModel, AutoProcessor],
+    # "tsystems/colqwen2-2b-v1.0": [ColQwen2, ColQwen2Processor],
+    # "vidore/colqwen2.5-v0.2": [ColQwen2_5, ColQwen2_5_Processor],
+    # "vidore/colqwen2-v1.0": [ColQwen2, ColQwen2Processor],
+    # "vidore/colqwen2.5-v0.1": [ColQwen2_5, ColQwen2_5_Processor],
+    # "vidore/colqwen2-v0.1": [ColQwen2, ColQwen2Processor],
+    # "vido/re/colsmolvlm-v0.1": [ColIdefics3, ColIdefics3Processor],
+    ## compatibility error
+    ## "MrLight/dse-qwen2-2b-mrl-v1": [AutoProcessor, Qwen2VLForConditionalGeneration],
+    # "vidore/colpali2-3b-pt-448": [ColPali, ColPaliProcessor],
+    # "vidore/colSmol-500M": [ColIdefics3, ColIdefics3Processor],
+    # "vidore/ColSmolVLM-Instruct-500M-base": [ColIdefics3, ColIdefics3Processor],
+}
 
-# save the evaluation metrics
-with open("vilarmor_metrics.json", "w") as f:
-    json.dump(metrics, f, indent=4)
+
+evaluator = ViLARMoREvaluator(ds_names=DATASETS, model_names=MODELS)

@@ -35,7 +35,7 @@ def tensors_to_ranx_runs(score_matrices):
 
     return runs
 
-def get_global_document_ranking(score_matrices):
+def get_global_document_ranking(score_matrices: list[torch.Tensor]):
     """
     Aggregate document scores across all queries to get a single global ranking.
 

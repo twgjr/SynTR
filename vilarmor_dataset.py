@@ -10,10 +10,7 @@ from vidore_benchmark.evaluation.vidore_evaluators.vidore_evaluator_beir import 
 from pseudo_query import PseudoQueryGenerator
 from datasets import Dataset
 
-COLLECTIONS = [
-    "vidore/docvqa_test_subsampled_beir",
-    # "vidore/tatdqa_test_beir",
-]
+
 
 
 class ViLARMoRDataset:
@@ -91,36 +88,3 @@ class ViLARMoRDataset:
                     ]['query'].values[0]
         return query
 
-    # Function to extract area
-    @staticmethod
-    def _extract_area(image_binary):
-        image = Image.open(io.BytesIO(image_binary["bytes"]))
-        width, height = image.size
-        return width * height  # Returning area as a single value
-
-    def find_max_min_area(self):
-        # Convert dataset to pandas DataFrame
-        df = self.corpus.to_pandas()
-
-        # Compute area column
-        df["area"] = df["image"].apply(lambda img: self._extract_area(img))
-
-        # Get max and min areas
-        max_area = df["area"].max()
-        min_area = df["area"].min()
-
-        return max_area, min_area
-
-
-def find_image_range():
-    areas = []
-    for name in COLLECTIONS:
-        ds = ViLARMoRDataset(name, use_pseudo=False)
-        areas.append(ds.find_max_min_area())
-
-    # Extract max and min separately
-    max_areas = [area[0] for area in areas]
-    min_areas = [area[1] for area in areas]
-
-    print(f"Max image pixels = {max(max_areas)}")
-    print(f"Min image pixels = {min(min_areas)}")

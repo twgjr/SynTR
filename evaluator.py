@@ -207,6 +207,14 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
             
         return scores
 
+    def scores_to_results(self, scores):
+        results = {}
+        for model_name in self.model_conf:
+            results[model_name] = {}
+            for ds_name in self.ds_names:
+                results[model_name][ds_name] = scores[model_name][ds_name].tolist()
+        return results
+    
     def rank_all(self, scores):
         """
         Rank documents for each dataset using query-specific fusion instead of global aggregation.
@@ -257,7 +265,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
         
 
-    def evaluate(self) -> dict[str, float]:
+    def evaluate(self, results) -> dict[str, float]:
         """
         Compute the final ranking of NDGC@10 using the relevance qrel and the ranked
         output from the retrievers.
@@ -266,14 +274,14 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
             pqrels = self.dataset_pqrels[ds_name]
             self.model_ndgc[ds_name] = {}
 
-            if ds_name not in self.doc_ranking:
+            if ds_name not in results:
                 raise ValueError(f"Document ranking missing for dataset {ds_name}")
 
             for model_name in self.model_conf:
                 print(f"Computing final nDCG@10 scores for {model_name}")
                 metrics = self.compute_retrieval_scores(
                     qrels=pqrels,
-                    results=self.doc_ranking[ds_name],  # Pass the ranked results
+                    results=results[model_name][ds_name],  # Pass the ranked results
                     ignore_identical_ids=False,
                 )
 
@@ -316,7 +324,9 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         print("Begin ViLARMoR Evaluation")
         self.download_generate_pseudos(top_p, temperature, num_image_samples, num_pqueries)
         scores = self.score_all(use_image_subset=True)
+        results = self.scores_to_results(scores)
         self.rank_all(scores)
         self.doc_importance()
         self.judge_all_datasets(top_k=top_k)
-        self.evaluate()
+        self.evaluate(results)
+        print("ViLARMoR Evaluation Complete")

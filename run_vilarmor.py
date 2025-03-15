@@ -45,4 +45,5 @@ evaluator = ViLARMoREvaluator(
     num_image_samples = 2,
     num_pqueries = 2
 )
+
 print(evaluator.run())

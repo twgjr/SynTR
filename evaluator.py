@@ -20,7 +20,7 @@ from vidore_benchmark.retrievers.base_vision_retriever import BaseVisionRetrieve
 from vilarmor_retriever import ViLARMoRRetriever
 from judge import ViLARMoRJudge
 from vilarmor_dataset import ViLARMoRDataset
-from fusion import get_global_document_ranking
+from fusion import get_fusion_per_query
 
 BATCH_SIZE = 1
 
@@ -213,7 +213,9 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         return scores
 
     def rank_all(self, scores):
-        # group scores by dataset, then make fused doc ranking
+        """
+        Rank documents for each dataset using query-specific fusion instead of global aggregation.
+        """
         for ds_name in self.ds_names:
             self.ds = ViLARMoRDataset(
                 name=ds_name, 
@@ -226,39 +228,45 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
             dataset_scores = []
             for model_name in self.model_conf:
                 dataset_scores.append(scores[model_name][ds_name])
-             # get fused doc rank for dataset: list of (doc_id, score) tuples
-             # for each retriever
-            self.doc_ranking[ds_name] = get_global_document_ranking(
-                                                            dataset_scores,
-                                                            query_ids, 
-                                                            image_ids,
-                                                        )
 
-            with open(os.path.join(ds_name,"doc_ranking.json"), "w") as file:
+            # Perform query-specific fusion (instead of global ranking)
+            self.doc_ranking[ds_name] = get_fusion_per_query(
+                dataset_scores, query_ids, image_ids
+            )
+
+            with open(os.path.join(ds_name, "doc_ranking.json"), "w") as file:
                 json.dump(self.doc_ranking[ds_name], file, indent=4)
+
 
 
     def evaluate(self) -> dict[str, float]:
         """
-        Compute the final ranking of NGDC@10 using the relevance qrel and the ranked
-        output from the retrievers
+        Compute the final ranking of NDGC@10 using the relevance qrel and the ranked
+        output from the retrievers.
         """
         for ds_name in self.dataset_pqrels:
             pqrels = self.dataset_pqrels[ds_name]
             self.model_ndgc[ds_name] = {}
+
+            if ds_name not in self.doc_ranking:
+                raise ValueError(f"Document ranking missing for dataset {ds_name}")
+
             for model_name in self.model_conf:
                 metrics = self.compute_retrieval_scores(
                     qrels=pqrels,
-                    results=self.,
+                    results=self.doc_ranking[ds_name],  # Pass the ranked results
                     ignore_identical_ids=False,
                 )
 
-                ndgc10 = metrics['NDGC@10']
+                ndcg10 = metrics.get('NDCG@10', 0.0)  # Ensure key exists
 
-                self.model_ndgc[ds_name][model_name] = ndgc10
-        
-        with open("ndgc.json", "w") as file:
+                self.model_ndgc[ds_name][model_name] = ndcg10
+
+        with open("ndcg.json", "w") as file:
             json.dump(self.model_ndgc, file, indent=4)
+
+        return self.model_ndgc
+
 
     def run(self):
         scores = self.score_all()

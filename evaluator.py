@@ -149,11 +149,11 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
         pqrel_list = []  # {"query-id": 1, "corpus-id": 473, "score": 1}
 
-        for corpus_id_key, _ in self.doc_ranking[self.ds.name]:
-            corpus_id = int(corpus_id_key)
-            image = self.ds.get_image(corpus_df, corpus_id)
+        for query_id, corpus_dict in self.doc_ranking[self.ds.name].items():
+            for corpus_id_key, _ in corpus_dict.items():
+                corpus_id = int(corpus_id_key)
+                image = self.ds.get_image(corpus_df, corpus_id)
 
-            for query_id in self.ds.queries[self.query_id_column]:
                 query = self.ds.get_query(queries_df, query_id)
                 judgment = judge.is_relevant(query, image)
                 pqrel_list.append(
@@ -163,6 +163,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                         "score": judgment,
                     }
                 )
+
 
         return pqrel_list
 

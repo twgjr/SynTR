@@ -24,8 +24,8 @@ MODELS = {
     "Metric-AI/colqwen2.5-3b-multilingual": [ColQwen2_5, ColQwen2_5_Processor],
     ## below model requires remote code trust, security risk
     ## "Metric-AI/ColQwenStella-2b-multilingual":[AutoModel, AutoProcessor],
-    # "tsystems/colqwen2-2b-v1.0": [ColQwen2, ColQwen2Processor],
-    # "vidore/colqwen2.5-v0.2": [ColQwen2_5, ColQwen2_5_Processor],
+    "tsystems/colqwen2-2b-v1.0": [ColQwen2, ColQwen2Processor],
+    "vidore/colqwen2.5-v0.2": [ColQwen2_5, ColQwen2_5_Processor],
     # "vidore/colqwen2-v1.0": [ColQwen2, ColQwen2Processor],
     # "vidore/colqwen2.5-v0.1": [ColQwen2_5, ColQwen2_5_Processor],
     # "vidore/colqwen2-v0.1": [ColQwen2, ColQwen2Processor],
@@ -41,9 +41,7 @@ MODELS = {
 evaluator = ViLARMoREvaluator(
     ds_names = DATASETS,
     model_conf = MODELS,
-    num_images_test = 2,  # subset of images for testing (None if not testing)
-    num_image_samples = 2,
+    num_images_test = 200,  # subset of images for testing (None if not testing)
+    num_image_samples = 20,
     num_pqueries = 2
 )
-
-print(evaluator.run())

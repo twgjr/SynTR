@@ -56,14 +56,6 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         self.dataset_pqrels: dict[str, dict[str, int]] = {}
         self.model_ndgc: dict[str, float] = {}
 
-        # dataset_pqrels format...
-        # [
-        #   dataset_name:
-        #   [
-        #       {"query-id", "corpus-id", "score"}
-        #   ]
-        # ]
-
         # Dataset column names
         self.corpus_id_column = "corpus-id"
         self.query_id_column = "query-id"
@@ -149,16 +141,16 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
         pqrels = defaultdict(dict)  # Change to dictionary format
 
-        for corpus_id_key, _ in self.doc_ranking[self.ds.name]:
-            corpus_id = str(int(corpus_id_key))  # Ensure it's a string
-            image = self.ds.get_image(corpus_df, corpus_id)
-
-            for query_id in self.ds.queries[self.query_id_column]:
+        for query_id, docs in self.doc_ranking[self.ds.name].items():
+            for corpus_id_key in docs.keys():  # Extract document IDs
+                corpus_id = str(int(corpus_id_key))  # Ensure it's a string
+                image = self.ds.get_image(corpus_df, corpus_id)
                 query = self.ds.get_query(queries_df, query_id)
                 judgment = judge.is_relevant(query, image)
                 pqrels[str(query_id)][corpus_id] = judgment  # Store in correct format
 
         return pqrels
+
 
 
     def judge_all_datasets(self):
@@ -175,8 +167,8 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                 num_image_samples=None
             )
             pqrels = self.pseudo_relevance_judgement(judge)
-            self.dataset_pqrels[dataset_name] = pqrels  # Now correctly formatted
-            with open("pqrels.json", "w") as file:
+            self.dataset_pqrels[dataset_name] = pqrels
+            with open(os.path.join(dataset_name, "pqrels.json"), "w") as file:
                 json.dump(pqrels, file, indent=4)
 
         
@@ -251,12 +243,12 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                     ignore_identical_ids=False,
                 )
 
-                ndcg10 = metrics.get('NDCG@10', 0.0)  # Ensure key exists
+                ndcg_at_10 = metrics['ndcg_at_10']
 
-                self.model_ndgc[ds_name][model_name] = ndcg10
-
-        with open("ndcg.json", "w") as file:
-            json.dump(self.model_ndgc, file, indent=4)
+                self.model_ndgc[ds_name][model_name] = ndcg_at_10
+                
+                with open(os.path.join(ds_name, "ndcg.json"), "w") as file:
+                    json.dump(self.model_ndgc[ds_name], file, indent=4)
 
         return self.model_ndgc
 

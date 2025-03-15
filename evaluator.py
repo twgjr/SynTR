@@ -140,32 +140,26 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
         return scores
 
-    def pseudo_relevance_judgement(self, judge: ViLARMoRJudge) -> list[dict[str, int]]:
+    def pseudo_relevance_judgement(self, judge: ViLARMoRJudge) -> dict[str, dict[str, int]]:
         """
-        Create a relevance list of the ranked documents using LLM and pseudo queries
+        Create a relevance dictionary of the ranked documents using LLM and pseudo queries.
         """
         queries_df = self.ds.queries.to_pandas()
         corpus_df = self.ds.corpus.to_pandas()
 
-        pqrel_list = []  # {"query-id": 1, "corpus-id": 473, "score": 1}
+        pqrels = defaultdict(dict)  # Change to dictionary format
 
-        for query_id, corpus_dict in self.doc_ranking[self.ds.name].items():
-            for corpus_id_key, _ in corpus_dict.items():
-                corpus_id = int(corpus_id_key)
-                image = self.ds.get_image(corpus_df, corpus_id)
+        for corpus_id_key, _ in self.doc_ranking[self.ds.name]:
+            corpus_id = str(int(corpus_id_key))  # Ensure it's a string
+            image = self.ds.get_image(corpus_df, corpus_id)
 
+            for query_id in self.ds.queries[self.query_id_column]:
                 query = self.ds.get_query(queries_df, query_id)
                 judgment = judge.is_relevant(query, image)
-                pqrel_list.append(
-                    {
-                        "query-id": query_id,
-                        "corpus-id": corpus_id,
-                        "score": judgment,
-                    }
-                )
+                pqrels[str(query_id)][corpus_id] = judgment  # Store in correct format
 
+        return pqrels
 
-        return pqrel_list
 
     def judge_all_datasets(self):
         """
@@ -176,17 +170,15 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         for dataset_name in self.ds_names:
             self.ds = ViLARMoRDataset(
                 name=dataset_name, 
-                # num_images_test=self.num_images_test,
-                # num_pqueries=self.num_pqueries, 
-                # num_image_samples=self.num_image_samples
-                num_images_test=None, # need the full set for this part
-                num_pqueries=None, # should have generated already
-                num_image_samples=None # 
+                num_images_test=None,  # need full set
+                num_pqueries=None,
+                num_image_samples=None
             )
             pqrels = self.pseudo_relevance_judgement(judge)
-            self.dataset_pqrels[dataset_name] = pqrels
+            self.dataset_pqrels[dataset_name] = pqrels  # Now correctly formatted
             with open("pqrels.json", "w") as file:
                 json.dump(pqrels, file, indent=4)
+
         
 
     def score_all(self):

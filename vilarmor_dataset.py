@@ -10,35 +10,17 @@ from vidore_benchmark.evaluation.vidore_evaluators.vidore_evaluator_beir import 
 from pseudo_query import PseudoQueryGenerator
 from datasets import Dataset
 
-
-
-
 class ViLARMoRDataset:
-    def __init__(self, name, num_images_test, num_pqueries, num_image_samples,
-                    temperature=1.0, top_p=0.9):
+    def __init__(self, name, image_id_list: list[int] | None):
         self.name = name
         self.corpus: Dataset = None
         self.queries: Dataset = None
         self.qrels: Dataset = None
-
-        if not os.path.exists(name):
-            # download, generate and save
-            corpus = self.download_corpus()
-            generator = PseudoQueryGenerator()
-            print(f"Generating queries for {self.name}")
-            psuedo_queries, gen_qd_pairs = generator.generate(
-                dataset_name=self.name, 
-                corpus=corpus, 
-                top_p=top_p, 
-                temperature=temperature, 
-                num_images=num_image_samples, 
-                num_queries=num_pqueries,
-                )
-            self.save_pseudos(psuedo_queries, gen_qd_pairs)
         
         self.load_local_dataset()
-        if not (num_images_test == None):
-            self.corpus = self.corpus.select(range(num_images_test))
+
+        if not (image_id_list == None):
+            self.corpus = self.corpus.filter(lambda example: example["corpus-id"] in image_id_list)
 
     def to_beir_dataset(self) -> BEIRDataset:
         return BEIRDataset(
@@ -46,24 +28,6 @@ class ViLARMoRDataset:
             queries=self.queries,
             qrels=self.qrels,
         )
-
-    def download_corpus(self):
-        try:
-            corpus = load_dataset(self.name, "corpus", split="test")
-        except Exception as e:
-            print(f"Failed to download dataset {self.name}: {e}")
-
-        # save to prefetch the data to speed up the evaluation
-        corpus.save_to_disk(os.path.join(self.name, "corpus"))
-        return corpus
-
-    def save_pseudos(self, psuedo_queries, gen_qd_pairs):
-        # Save to a JSON file
-        with open(os.path.join(self.name, "gen_qd_pairs.json"), "w") as f:
-            json.dump(gen_qd_pairs, f, indent=4)
-
-        with open(os.path.join(self.name, "pseudo_queries.json"), "w") as f:
-            json.dump(psuedo_queries, f, indent=4)
 
     def load_local_dataset(self):
         self.corpus = load_from_disk(os.path.join(self.name, "corpus"))
@@ -128,12 +92,12 @@ class ViLARMoRDataset:
 
 
 
-
-    def get_query_image_ids(self):
-        gen_pairs_path = os.path.join(self.name, "gen_qd_pairs.json")
-        gen_pairs = load_dataset("json", data_files=gen_pairs_path)['train']
-        query_ids = gen_pairs['query-id']
-        image_ids = list(set(gen_pairs['corpus-id']))
+    @staticmethod
+    def get_query_image_ids(name):
+        with open(os.path.join(name,"query_ids.json"), "r") as file:
+            query_ids = json.load(file)
+        with open(os.path.join(name,"image_ids.json"), "r") as file:
+            image_ids = json.load(file)
         return query_ids, image_ids
 
 

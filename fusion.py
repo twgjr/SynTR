@@ -13,10 +13,14 @@ def tensor_list_to_ranx_runs(score_matrix_list, query_ids, image_ids):
     Returns:
         List[ranx.Run]: List of `Run` objects.
     """
+    print(f"Query IDs length: {len(query_ids)}, Image IDs length: {len(image_ids)}")
     runs = []
     for score_matrix in score_matrix_list:
+        print(f"Score matrix shape: {score_matrix.shape}")
         retriever_dict = {
-            str(query_ids[q]): {str(image_ids[d]): float(score_matrix[q, d]) for d in range(score_matrix.shape[1])}
+            str(query_ids[q]):
+            {str(image_ids[d]): 
+                float(score_matrix[q, d]) for d in range(score_matrix.shape[1])}
             for q in range(score_matrix.shape[0])
         }
         runs.append(Run(retriever_dict))

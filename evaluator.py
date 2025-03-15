@@ -160,6 +160,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         """
         judge = ViLARMoRJudge()
         for dataset_name in self.ds_names:
+            print(f"Generating pqrels for {dataset_name}")
             self.ds = ViLARMoRDataset(
                 name=dataset_name, 
                 num_images_test=None,  # need full set
@@ -202,6 +203,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         Rank documents for each dataset using query-specific fusion instead of global aggregation.
         """
         for ds_name in self.ds_names:
+            print(f"Making the document importance ranking for {ds_name}")
             self.ds = ViLARMoRDataset(
                 name=ds_name, 
                 num_images_test=self.num_images_test,
@@ -237,6 +239,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                 raise ValueError(f"Document ranking missing for dataset {ds_name}")
 
             for model_name in self.model_conf:
+                print(f"Computing final nDCG@10 scores for {model_name}")
                 metrics = self.compute_retrieval_scores(
                     qrels=pqrels,
                     results=self.doc_ranking[ds_name],  # Pass the ranked results
@@ -254,6 +257,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
 
     def run(self):
+        print("Begin ViLARMoR Evaluation")
         scores = self.score_all()
         self.rank_all(scores)
         self.judge_all_datasets()

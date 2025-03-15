@@ -30,8 +30,7 @@ MODELS = {
     # "vidore/colqwen2.5-v0.1": [ColQwen2_5, ColQwen2_5_Processor],
     # "vidore/colqwen2-v0.1": [ColQwen2, ColQwen2Processor],
     # "vido/re/colsmolvlm-v0.1": [ColIdefics3, ColIdefics3Processor],
-    ## compatibility error
-    ## "MrLight/dse-qwen2-2b-mrl-v1": [AutoProcessor, Qwen2VLForConditionalGeneration],
+    # "MrLight/dse-qwen2-2b-mrl-v1": [Qwen2VLForConditionalGeneration, AutoProcessor],
     # "vidore/colpali2-3b-pt-448": [ColPali, ColPaliProcessor],
     # "vidore/colSmol-500M": [ColIdefics3, ColIdefics3Processor],
     # "vidore/ColSmolVLM-Instruct-500M-base": [ColIdefics3, ColIdefics3Processor],
@@ -41,7 +40,9 @@ MODELS = {
 evaluator = ViLARMoREvaluator(
     ds_names = DATASETS,
     model_conf = MODELS,
-    num_images_test = 200,  # subset of images for testing (None if not testing)
+    num_images_test = 40,  # subset of images for testing (None if not testing)
     num_image_samples = 20,
     num_pqueries = 2
 )
+
+evaluator.run()

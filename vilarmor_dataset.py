@@ -25,6 +25,7 @@ class ViLARMoRDataset:
             # download, generate and save
             corpus = self.download_corpus()
             generator = PseudoQueryGenerator()
+            print(f"Generating queries for {self.name}")
             psuedo_queries, gen_qd_pairs = generator.generate(
                 dataset_name=self.name, 
                 corpus=corpus, 

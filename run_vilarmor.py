@@ -21,7 +21,7 @@ DATASETS = [
 
 MODELS = {
     "Metric-AI/ColQwen2.5-3b-multilingual-v1.0": [ColQwen2_5, ColQwen2_5_Processor],
-    # "Metric-AI/colqwen2.5-3b-multilingual": [ColQwen2_5, ColQwen2_5_Processor],
+    "Metric-AI/colqwen2.5-3b-multilingual": [ColQwen2_5, ColQwen2_5_Processor],
     ## below model requires remote code trust, security risk
     ## "Metric-AI/ColQwenStella-2b-multilingual":[AutoModel, AutoProcessor],
     # "tsystems/colqwen2-2b-v1.0": [ColQwen2, ColQwen2Processor],
@@ -38,4 +38,11 @@ MODELS = {
 }
 
 
-evaluator = ViLARMoREvaluator(ds_names=DATASETS, model_names=MODELS)
+evaluator = ViLARMoREvaluator(
+    ds_names = DATASETS,
+    model_conf = MODELS,
+    num_images_test = 2,  # subset of images for testing (None if not testing)
+    num_image_samples = 2,
+    num_pqueries = 2
+)
+print(evaluator.run())

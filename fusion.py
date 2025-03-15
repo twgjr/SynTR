@@ -3,7 +3,8 @@ import numpy as np
 from ranx import Run, fuse
 from collections import defaultdict
 
-def tensors_to_ranx_runs(score_matrices):
+def tensor_list_to_ranx_runs(score_matrix_list, query_ids:list[int], 
+                                image_ids:list[int]):
     """
     Convert a list of 2D tensors (one per retriever) into a list of `ranx.Run` objects.
 
@@ -13,20 +14,16 @@ def tensors_to_ranx_runs(score_matrices):
     Returns:
         List[ranx.Run]: List of `Run` objects for `ranx`
     """
-    num_retrievers = len(score_matrices)
-    num_queries, num_docs = score_matrices[0].shape
-
-    # Create query and document IDs
-    query_ids = [str(i+1) for i in range(num_queries)]
-    doc_ids = [str(j+1) for j in range(num_docs)]
+    num_retrievers = len(score_matrix_list)
+    num_queries, num_docs = score_matrix_list[0].shape
 
     runs = []
     for r in range(num_retrievers):
-        score_matrix = score_matrices[r]  # Shape: (num_queries, num_docs)
+        score_matrix = score_matrix_list[r]  # Shape: (num_queries, num_docs)
 
         # Convert tensor to dictionary format
         retriever_dict = {
-            query_ids[q]: {doc_ids[d]: float(score_matrix[q, d]) for d in range(num_docs)}
+            str(query_ids[q]): {str(image_ids[d]): float(score_matrix[q, d]) for d in range(num_docs)}
             for q in range(num_queries)
         }
 
@@ -35,19 +32,16 @@ def tensors_to_ranx_runs(score_matrices):
 
     return runs
 
-def get_global_document_ranking(score_matrices: list[torch.Tensor]):
+def get_global_document_ranking(score_matrix_list: list[torch.Tensor],
+                                query_ids:int, image_ids:int):
     """
-    Aggregate document scores across all queries to get a single global ranking.
-
-    Args:
-        fused_run (ranx.Run): The fused rankings per query.
-
+    Aggregate document scores across all queries to get a single global ranking
     Returns:
         List[Tuple[str, float]]: A sorted list of (document_id, global_score), highest first.
     """
 
     # Convert tensors to `ranx.Run`
-    runs = tensors_to_ranx_runs(score_matrices)
+    runs = tensor_list_to_ranx_runs(score_matrix_list, query_ids, image_ids)
 
     # Apply RRF
     fused_run = fuse(runs, method="rrf")

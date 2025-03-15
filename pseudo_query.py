@@ -13,18 +13,18 @@ class PseudoQueryGenerator(BaseVLM):
         super().__init__()
 
     def generate(self, dataset_name: str, corpus: Dataset, top_p:float, 
-                    temperature:float, num_docs: int, num_queries: int):
+                    temperature:float, num_images: int, num_queries: int):
         """
         Generate pseudo queries and relevance list from sub sample of the corpus.
         """
-        samples = corpus.shuffle().select(range(num_docs))
+        samples = corpus.shuffle().select(range(num_images))
 
         psuedo_queries = []  # ('query-id', 'query')
         dq_pairs = []
         prompt = "Generate a question that the following image can answer. \
             Avoid generating general questions."
 
-        for d in tqdm(range(num_docs), desc=f"Processing {dataset_name}"):
+        for d in tqdm(range(num_images), desc=f"Processing {dataset_name}"):
             corpus_id = samples[d]["corpus-id"]
             
             for q in tqdm(range(num_queries), desc=f"Generating queries"):

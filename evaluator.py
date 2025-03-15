@@ -2,7 +2,8 @@
 This is based on vidore_evaluator_beir.py with modifications to use with
 the LARMOR method.
 """
-
+import json
+import os
 from collections import defaultdict
 import torch
 import torch.nn.functional as F
@@ -38,18 +39,24 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
     def __init__(
         self,
         ds_names: list[str],
-        model_names: dict[str : tuple(PreTrainedModel, ProcessorMixin)],
-        num_corpus: int = None,  # subset of images for testing
+        model_conf: dict[str : tuple[PreTrainedModel, ProcessorMixin]],
+        num_image_samples: int,
+        num_pqueries: int,
+        num_images_test: int = None,  # subset of images for testing
     ):
         super().__init__(vision_retriever=None)
         self.ds: ViLARMoRDataset = None
         self.vision_retriever: ViLARMoRRetriever = None
         self.ds_names = ds_names
-        self.model_names = model_names
-        self.num_corpus = num_corpus
-        self.doc_ranking: dict[str, float] = []
-        self.pqrels_map: dict[str, dict[str, int]] = []
-        # pqrel_list format...
+        self.model_conf = model_conf
+        self.num_images_test = num_images_test
+        self.num_image_samples = num_image_samples
+        self.num_pqueries = num_pqueries
+        self.doc_ranking: dict[str, float] = {}
+        self.dataset_pqrels: dict[str, dict[str, int]] = {}
+        self.model_ndgc: dict[str, float] = {}
+
+        # dataset_pqrels format...
         # [
         #   dataset_name:
         #   [
@@ -142,7 +149,8 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
         pqrel_list = []  # {"query-id": 1, "corpus-id": 473, "score": 1}
 
-        for corpus_id, _ in self.doc_ranking[self.ds.name]:
+        for corpus_id_key, _ in self.doc_ranking[self.ds.name]:
+            corpus_id = int(corpus_id_key)
             image = self.ds.get_image(corpus_df, corpus_id)
 
             for query_id in self.ds.queries[self.query_id_column]:
@@ -158,63 +166,102 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
         return pqrel_list
 
-    def judge_all_datasets(self, judge: ViLARMoRJudge):
+    def judge_all_datasets(self):
         """
         Judge all the datasets using reduced set of ranked documents (images)
         for each dataset and associated pseudo queries.
         """
         judge = ViLARMoRJudge()
         for dataset_name in self.ds_names:
-            self.ds = ViLARMoRDataset(name=dataset_name, num_images=self.num_corpus)
+            self.ds = ViLARMoRDataset(
+                name=dataset_name, 
+                # num_images_test=self.num_images_test,
+                # num_pqueries=self.num_pqueries, 
+                # num_image_samples=self.num_image_samples
+                num_images_test=None, # need the full set for this part
+                num_pqueries=None, # should have generated already
+                num_image_samples=None # 
+            )
             pqrels = self.pseudo_relevance_judgement(judge)
-            self.pqrels_map[dataset_name] = pqrels
+            self.dataset_pqrels[dataset_name] = pqrels
+            with open("pqrels.json", "w") as file:
+                json.dump(pqrels, file, indent=4)
+        
 
-    def evaluate(
-        self, pqrel_list: dict[str, dict[str, int]], ranking: list[str]
-    ) -> dict[str, float]:
-        """
-        Compute the final ranking of NGDC@10 using the relevance qrel and the ranked
-        output from the retrievers
-        """
-        ds_qrels = Dataset.from_dict(pqrel_list)["train"]
-
-        # Get query relevance data
-        qrels: dict[str, dict[str, int]] = defaultdict(dict)
-
-        for qrel in ds_qrels:
-            # Convert qrels to have the format expected by MTEB.
-            # NOTE: The IDs are stored as integers in the dataset.
-            query_id = str(qrel[self.query_id_column])
-            corpus_id = str(qrel[self.corpus_id_column])
-            qrels[query_id][corpus_id] = qrel[self.score_column]
-
-        metrics = self.compute_retrieval_scores(
-            qrels=qrels,
-            results=ranking,
-            ignore_identical_ids=False,
-        )
-
-        return metrics
-
-    def run(self):
+    def score_all(self):
         # get the scores for each retriever and dataset pairing
         scores = {}
-        for model_name in self.model_names:
-            self.vision_retriever = ViLARMoRRetriever(model_name)
+        for model_name in self.model_conf:
+            model_class, processor_class = self.model_conf[model_name]
+            self.vision_retriever = ViLARMoRRetriever(model_name, model_class, 
+                                                        processor_class)
             scores[model_name] = {}
             for ds_name in self.ds_names:
-                self.ds = ViLARMoRDataset(name=ds_name, num_images=self.num_corpus)
+                self.ds = ViLARMoRDataset(
+                    name=ds_name, 
+                    num_images_test=self.num_images_test,
+                    num_pqueries=self.num_pqueries, 
+                    num_image_samples=self.num_image_samples
+                )
                 score = self.score_single_model_corpus(
                     batch_query=BATCH_SIZE,
                     batch_image=BATCH_SIZE,
                     batch_score=BATCH_SIZE,
                 )
                 scores[model_name][ds_name] = score
+            
+        return scores
 
+    def rank_all(self, scores):
         # group scores by dataset, then make fused doc ranking
         for ds_name in self.ds_names:
+            self.ds = ViLARMoRDataset(
+                name=ds_name, 
+                num_images_test=self.num_images_test,
+                num_pqueries=self.num_pqueries, 
+                num_image_samples=self.num_image_samples
+            )
+            
+            query_ids, image_ids = self.ds.get_query_image_ids()
             dataset_scores = []
-            for model_name in self.model_names:
+            for model_name in self.model_conf:
                 dataset_scores.append(scores[model_name][ds_name])
              # get fused doc rank for dataset: list of (doc_id, score) tuples
-            self.doc_ranking[ds_name] = get_global_document_ranking(dataset_scores)
+             # for each retriever
+            self.doc_ranking[ds_name] = get_global_document_ranking(
+                                                            dataset_scores,
+                                                            query_ids, 
+                                                            image_ids,
+                                                        )
+
+            with open(os.path.join(ds_name,"doc_ranking.json"), "w") as file:
+                json.dump(self.doc_ranking[ds_name], file, indent=4)
+
+
+    def evaluate(self) -> dict[str, float]:
+        """
+        Compute the final ranking of NGDC@10 using the relevance qrel and the ranked
+        output from the retrievers
+        """
+        for ds_name in self.dataset_pqrels:
+            pqrels = self.dataset_pqrels[ds_name]
+            self.model_ndgc[ds_name] = {}
+            for model_name in self.model_conf:
+                metrics = self.compute_retrieval_scores(
+                    qrels=pqrels,
+                    results=self.,
+                    ignore_identical_ids=False,
+                )
+
+                ndgc10 = metrics['NDGC@10']
+
+                self.model_ndgc[ds_name][model_name] = ndgc10
+        
+        with open("ndgc.json", "w") as file:
+            json.dump(self.model_ndgc, file, indent=4)
+
+    def run(self):
+        scores = self.score_all()
+        self.rank_all(scores)
+        self.judge_all_datasets()
+        self.evaluate()

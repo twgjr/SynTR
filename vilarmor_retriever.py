@@ -8,10 +8,10 @@ from transformers.processing_utils import ProcessorMixin
 
 
 class ViLARMoRRetriever(VisionRetriever):
-    def __init__(self, model_name):
+    def __init__(self, model_name, model_class, processor_class):
         self.model_name = model_name
-        model = self._get_model_instance(model_name)
-        processor = self._get_processor_instance(model_name)
+        model = self._get_model_instance(model_name, model_class)
+        processor = self._get_processor_instance(model_name, processor_class)
         super().__init__(model=model, processor=processor)
 
     @staticmethod

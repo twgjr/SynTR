@@ -14,8 +14,8 @@ from datasets import Dataset
 
 
 class ViLARMoRDataset:
-    def __init__(self, name, num_images, num_pqueries, temperature=1.0, 
-                top_p=0.9):
+    def __init__(self, name, num_images_test, num_pqueries, num_image_samples,
+                    temperature=1.0, top_p=0.9):
         self.name = name
         self.corpus: Dataset = None
         self.queries: Dataset = None
@@ -30,12 +30,14 @@ class ViLARMoRDataset:
                 corpus=corpus, 
                 top_p=top_p, 
                 temperature=temperature, 
-                num_docs=num_images, 
+                num_images=num_image_samples, 
                 num_queries=num_pqueries,
                 )
             self.save_pseudos(psuedo_queries, gen_qd_pairs)
         
         self.load_local_dataset()
+        if not (num_images_test == None):
+            self.corpus = self.corpus.select(range(num_images_test))
 
     def to_beir_dataset(self) -> BEIRDataset:
         return BEIRDataset(
@@ -87,4 +89,12 @@ class ViLARMoRDataset:
                     == query_id
                     ]['query'].values[0]
         return query
+
+    def get_query_image_ids(self):
+        gen_pairs_path = os.path.join(self.name, "gen_qd_pairs.json")
+        gen_pairs = load_dataset("json", data_files=gen_pairs_path)['train']
+        query_ids = gen_pairs['query-id']
+        image_ids = list(set(gen_pairs['corpus-id']))
+        return query_ids, image_ids
+
 

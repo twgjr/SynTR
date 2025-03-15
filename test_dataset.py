@@ -6,7 +6,7 @@ from transformers import set_seed
 set_seed(42)
 
 name = "vidore/docvqa_test_subsampled_beir"
-ds = ViLARMoRDataset(name=name, num_images=2, num_pqueries=5)
+ds = ViLARMoRDataset(name=name, num_images_test=2, num_pqueries=2, num_image_samples=2)
 
 def test_query_dataset():
     pq_path = os.path.join(name, "pseudo_queries.json")
@@ -27,29 +27,21 @@ def test_dataset_pandas():
 
 def test_get_image():
     corpus_df = ds.corpus.to_pandas()
-    break_count = 3
     for corpus_id in corpus_df["corpus-id"]:
         image = ds.get_image(corpus_df, corpus_id)
-        print(f"q({corpus_id}) = {image}")
+        print(f"i({corpus_id}) = {image}")
         image.save(f"image_id{corpus_id}.png")
-        break_count -= 1
-        if(break_count == 0):
-            break
 
 def test_get_query():
     queries_df = ds.queries.to_pandas()
-    break_count = 3
     for query_id in queries_df["query-id"]:
         query = ds.get_query(queries_df, query_id)
         print(f"q({query_id}) = {query}")
-        break_count -= 1
-        if(break_count == 0):
-            break
 
 if __name__=="__main__":
     # test_query_dataset()
     # test_query_vilarmor_dataset()
     # test_dataset_pandas()
-    # test_get_image()
-    test_get_query()
+    test_get_image()
+    # test_get_query()
 

@@ -208,11 +208,26 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         return scores
 
     def scores_to_results(self, scores):
+        """
+        Converts the scores to the BeIR qrel format
+        """
         results = {}
-        for model_name in self.model_conf:
-            results[model_name] = {}
-            for ds_name in self.ds_names:
-                results[model_name][ds_name] = scores[model_name][ds_name].tolist()
+
+        for ds_name in self.ds_names:
+            results[ds_name] = {}
+            query_ids, image_ids = ViLARMoRDataset.get_query_image_ids(ds_name)
+            for model_name in self.model_conf:
+                results[ds_name][model_name] = {}
+                scores_tensor = scores[model_name][ds_name]
+                for query_idx, query_id in enumerate(query_ids):
+                    results[ds_name][model_name][query_id] = {}
+                    for img_idx, image_id in enumerate(image_ids):
+                        results[ds_name][model_name][query_id][image_id] = scores[model_name][ds_name][query_idx][img_idx].item()
+                
+                with open(os.path.join(ds_name, "results.json"), "w") as file:
+                    json.dump(results[ds_name], file, indent=4)
+        
+
         return results
     
     def rank_all(self, scores):
@@ -278,10 +293,10 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                 raise ValueError(f"Document ranking missing for dataset {ds_name}")
 
             for model_name in self.model_conf:
-                print(f"Computing final nDCG@10 scores for {model_name}")
+                print(f"Computing final nDCG@10 scores for {model_name} using: {results[ds_name][model_name]}")
                 metrics = self.compute_retrieval_scores(
                     qrels=pqrels,
-                    results=results[model_name][ds_name],  # Pass the ranked results
+                    results=results[ds_name][model_name],  # Pass the ranked results
                     ignore_identical_ids=False,
                 )
 
@@ -324,9 +339,12 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         print("Begin ViLARMoR Evaluation")
         self.download_generate_pseudos(top_p, temperature, num_image_samples, num_pqueries)
         scores = self.score_all(use_image_subset=True)
+
+        print(scores)
         results = self.scores_to_results(scores)
+        print(results)
         self.rank_all(scores)
         self.doc_importance()
         self.judge_all_datasets(top_k=top_k)
         self.evaluate(results)
-        print("ViLARMoR Evaluation Complete")
+        # print("ViLARMoR Evaluation Complete")

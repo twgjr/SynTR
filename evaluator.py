@@ -220,9 +220,9 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                 results[ds_name][model_name] = {}
                 scores_tensor = scores[model_name][ds_name]
                 for query_idx, query_id in enumerate(query_ids):
-                    results[ds_name][model_name][query_id] = {}
+                    results[ds_name][model_name][str(query_id)] = {}
                     for img_idx, image_id in enumerate(image_ids):
-                        results[ds_name][model_name][query_id][image_id] = scores[model_name][ds_name][query_idx][img_idx].item()
+                        results[ds_name][model_name][str(query_id)][str(image_id)] = scores[model_name][ds_name][query_idx][img_idx].item()
                 
                 with open(os.path.join(ds_name, "results.json"), "w") as file:
                     json.dump(results[ds_name], file, indent=4)

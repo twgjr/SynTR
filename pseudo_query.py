@@ -32,7 +32,7 @@ class PseudoQueryGenerator(BaseVLM):
         prompt = "Generate a question that the following image can answer. \
             Avoid generating general questions."
 
-        for d in tqdm(range(corpus), desc=f"Processing {dataset_name}"):
+        for d in tqdm(range(len(corpus)), desc=f"Processing {dataset_name}"):
             corpus_id = corpus[d]["corpus-id"]
 
             for q in tqdm(range(self.num_queries), desc=f"Generating queries"):

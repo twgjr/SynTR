@@ -176,8 +176,9 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
             prl = self.pseudo_relevance_judgement(judge, top_k)
             self.pseudo_rel_list[dataset_name] = prl
-            with open(os.path.join(dataset_name, "pseudo_rel_list.json"), "w") as file:
-                json.dump(prl, file, indent=4)
+
+        with open(os.path.join(dataset_name, "pseudo_rel_list.json"), "w") as file:
+            json.dump(self.pseudo_rel_list, file, indent=4)
 
     def score_all(self):
         # get the scores for each retriever and dataset pairing

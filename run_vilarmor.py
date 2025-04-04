@@ -23,8 +23,7 @@ DATASETS = [
 MODELS = {
     "Metric-AI/ColQwen2.5-3b-multilingual-v1.0": [ColQwen2_5, ColQwen2_5_Processor],
     "Metric-AI/colqwen2.5-3b-multilingual": [ColQwen2_5, ColQwen2_5_Processor],
-    ## below model requires remote code trust, security risk
-    ## "Metric-AI/ColQwenStella-2b-multilingual":[AutoModel, AutoProcessor],
+    # "Metric-AI/ColQwenStella-2b-multilingual":[AutoModel, AutoProcessor],
     # "tsystems/colqwen2-2b-v1.0": [ColQwen2, ColQwen2Processor],
     "vidore/colqwen2.5-v0.2": [ColQwen2_5, ColQwen2_5_Processor],
     # "vidore/colqwen2-v1.0": [ColQwen2, ColQwen2Processor],
@@ -46,9 +45,9 @@ evaluator = ViLARMoREvaluator(
 )
 
 evaluator.run(
-    top_k=10, 
+    top_k=4, 
     top_p=0.9, 
     temperature=1.0, 
     num_pqueries = 2,
-    limit_corpus_size=15
+    limit_corpus_size=5
 )

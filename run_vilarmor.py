@@ -46,9 +46,9 @@ evaluator = ViLARMoREvaluator(
 )
 
 evaluator.run(
-    top_k=4, 
+    top_k=10, 
     top_p=0.9, 
     temperature=1.0, 
-    num_image_samples = 8,
-    num_pqueries = 2
+    num_pqueries = 2,
+    limit_corpus_size=15
 )

@@ -1,103 +1,118 @@
-from datasets import load_dataset, load_from_disk
+from datasets import load_dataset, load_from_disk, Dataset
 import os
 import json
+from pseudo_query import PseudoQueryGenerator
 from PIL import Image
 import io
-from pandas import DataFrame
-from vidore_benchmark.evaluation.vidore_evaluators.vidore_evaluator_beir import (
-    BEIRDataset,
-)
-from pseudo_query import PseudoQueryGenerator
-from datasets import Dataset
 
 class ViLARMoRDataset:
-    def __init__(self, name, image_id_list: list[int] | None):
+    def __init__(self, name:str, corpus_size_limit:int=None, 
+                 generator: PseudoQueryGenerator = None):
         self.name = name
         self.corpus: Dataset = None
         self.queries: Dataset = None
         self.qrels: Dataset = None
+
+        if(os.path.exists(os.path.join(self.name, "corpus"))):
+            self.load_corpus()
+
+        if self.corpus is None:
+            self.download_corpus(name, corpus_size_limit)
+
+        if generator is not None:
+            pseudo_queries, pseudo_qrel = generator.generate(
+                dataset_name=name,
+                corpus=self.corpus,
+            )
+            self.queries = pseudo_queries
+            self.qrels = pseudo_qrel
+
+            with open(os.path.join(name, "pseudo_queries.json"), "w") as f:
+                json.dump(pseudo_queries, f, indent=4)
+
+            with open(os.path.join(name, "pseudo_pqrels.json"), "w") as f:
+                json.dump(pseudo_qrel, f, indent=4)
+        else:
+            self.load_queries()
+            self.load_qrels()
+
+        if self.queries is None or self.qrels is None:
+            raise ValueError(
+                "Queries or qrels not found.\n"
+                "Provide a generator to generate pseudo queries and qrels.\n")
+            
+    def download_corpus(self, name, corpus_size_limit):
+        try:
+            corpus: Dataset = load_dataset(name, "corpus", split="test")
+        except Exception as e:
+            print(f"Failed to download dataset {name}: {e}")
+
+        if corpus_size_limit:
+            # Limit the size of the corpus
+            corpus = corpus.select(range(corpus_size_limit))
+
+        # save to prefetch the data to speed up the evaluation
+        corpus.save_to_disk(os.path.join(name, "corpus"))
         
-        self.load_local_dataset()
+        self.corpus = corpus
 
-        if not (image_id_list == None):
-            self.corpus = self.corpus.filter(lambda example: example["corpus-id"] in image_id_list)
-
-    def to_beir_dataset(self) -> BEIRDataset:
-        return BEIRDataset(
-            corpus=self.corpus,
-            queries=self.queries,
-            qrels=self.qrels,
-        )
-
-    def load_local_dataset(self):
+    def load_corpus(self):
         self.corpus = load_from_disk(os.path.join(self.name, "corpus"))
+
+    def load_queries(self):
         pq_path = os.path.join(self.name, "pseudo_queries.json")
         queries = load_dataset("json", data_files=pq_path)
-        self.queries = queries['train']
-        pqrel_path = os.path.join(self.name, "pseudo_qrel.json")
-        if os.path.exists(pqrel_path):
-            qrels = load_dataset("json", data_files=pqrel_path)
-            self.qrels = qrels['train']
+        self.queries = queries["train"]
 
-    def get_image(self, corpus_df: DataFrame, corpus_id: int):
-        # Ensure 'corpus-id' column is an integer for proper matching
-        corpus_id = int(corpus_id)
-        corpus_df['corpus-id'] = corpus_df['corpus-id'].astype(int)
+    def load_qrels(self):
+        pqrel_path = os.path.join(self.name, "pseudo_pqrels.json")
+        qrels = load_dataset("json", data_files=pqrel_path)
+        self.qrels = qrels["train"]
 
-        filtered_images = corpus_df[corpus_df['corpus-id'] == corpus_id]
+    def get_image(self, corpus_id: int):
+        # Filter the dataset to find items with matching corpus-id
+        filtered_images = []
+        for item in self.corpus:
+            if int(item["corpus-id"]) == corpus_id:
+                filtered_images.append(item)
 
-        if filtered_images.empty:
-            debug_info = corpus_df.head(3)  # Get top 3 corpus entries for debugging
-            raise ValueError(
-                f"No image found for corpus_id: {corpus_id}\n"
-                f"Top 3 available corpus-ids:\n{debug_info[['corpus-id']].to_string(index=False)}"
-            )
+        if not filtered_images:
+            raise ValueError(f"No image found for corpus_id: {corpus_id}\n")
 
-        # More robust indexing
-        image_map = filtered_images.iloc[0]['image']
+        if len(filtered_images) > 1:
+            raise ValueError(f"Duplicate corpus_id found: {corpus_id}\n")
 
-        if not isinstance(image_map, dict) or "bytes" not in image_map:
-            raise ValueError(
-                f"Image data is missing 'bytes' key for corpus_id: {corpus_id}\n"
-                f"Available keys in image data: {list(image_map.keys()) if isinstance(image_map, dict) else 'Not a dict'}"
-            )
+        # Extract the image map from the only matching item
+        image_map = filtered_images[0]["image"]
 
         try:
             image = Image.open(io.BytesIO(image_map["bytes"]))
         except Exception as e:
             raise ValueError(
                 f"Failed to open image for corpus_id: {corpus_id}. Error: {e}\n"
-                f"First 3 corpus entries: {corpus_df.head(3)[['corpus-id']].to_string(index=False)}"
             )
 
         return image
 
+    def get_query(self, query_id: int):
+        # Filter the dataset to find items with matching query-id
+        filtered_queries = []
+        for item in self.queries:
+            if int(item["query-id"]) == query_id:
+                filtered_queries.append(item)
 
+        if not filtered_queries:
+            raise ValueError(f"No query found for query_id: {query_id}\n")
 
+        if len(filtered_queries) > 1:
+            raise ValueError(f"Duplicate query_id found: {query_id}\n")
 
-    def get_query(self, queries_df: DataFrame, query_id: int):
-        query_id = int(query_id)
-        queries_df['query-id'] = queries_df['query-id'].astype(int)
-        
-        filtered_queries = queries_df[queries_df['query-id'] == query_id]
+        return filtered_queries[0]["query"]
 
-        if filtered_queries.empty:
-            debug_info = queries_df.head(3)  # Get top 3 queries for debugging
-            raise ValueError(
-                f"No query found for query_id: {query_id}\n"
-                f"Top 3 available query-ids:\n{debug_info[['query-id', 'query']].to_string(index=False)}"
-            )
-
-        return filtered_queries.iloc[0]['query']  # More robust indexing
-
-
-
-    @staticmethod
-    def get_query_image_ids(name):
-        with open(os.path.join(name,"query_ids.json"), "r") as file:
-            query_ids = json.load(file)
-        with open(os.path.join(name,"image_ids.json"), "r") as file:
-            image_ids = json.load(file)
-        return query_ids, image_ids
-
-
+    def get_query_image_ids(self):
+        query_ids = set()
+        image_ids = set()
+        for qrel in self.qrels:
+            query_ids.add(qrel["query-id"])
+            image_ids.add(qrel["corpus-id"])
+        return list(query_ids), list(image_ids)

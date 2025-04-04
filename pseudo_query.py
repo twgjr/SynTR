@@ -8,44 +8,38 @@ from transformers import set_seed
 
 set_seed(42)
 
+
 class PseudoQueryGenerator(BaseVLM):
-    def __init__(self):
+    def __init__(
+        self, top_p: float = 0.9, temperature: float = 1.0, num_queries: int = 2
+    ):
         super().__init__()
+        self.top_p = top_p
+        self.temperature = temperature
+        self.num_queries = num_queries
 
-    def generate(self, dataset_name: str, corpus: Dataset, top_p:float, 
-                    temperature:float, num_images: int, num_queries: int):
+    def generate(
+        self,
+        dataset_name: str,
+        corpus: Dataset,
+    ):
         """
-        Generate pseudo queries and relevance list from sub sample of the corpus.
+        Generate pseudo queries and qrel from corpus.
         """
-        samples = corpus.shuffle().select(range(num_images))
-
         psuedo_queries = []  # ('query-id', 'query')
-        image_ids = set()
-        query_ids = set()
+        qrels = []  # ('query-id', 'corpus-id', 'relevance')
+
         prompt = "Generate a question that the following image can answer. \
             Avoid generating general questions."
 
-        for d in tqdm(range(num_images), desc=f"Processing {dataset_name}"):
-            corpus_id = samples[d]["corpus-id"]
-            image_ids.add(corpus_id)
-            
-            for q in tqdm(range(num_queries), desc=f"Generating queries"):
-                qid = q + d*num_queries
-                query_ids.add(qid)
-                messages = [self.message_template(prompt, samples[d]["image"])]
-                pseudo_query = self.response(messages, top_p, temperature)
+        for d in tqdm(range(corpus), desc=f"Processing {dataset_name}"):
+            corpus_id = corpus[d]["corpus-id"]
+
+            for q in tqdm(range(self.num_queries), desc=f"Generating queries"):
+                qid = q + d * self.num_queries
+                messages = [self.message_template(prompt, corpus[d]["image"])]
+                pseudo_query = self.response(messages, self.top_p, self.temperature)
                 psuedo_queries.append({"query-id": qid, "query": pseudo_query})
+                qrels.append({"query-id": qid, "corpus-id": corpus_id, "relevance": 1})
 
-        image_ids = list(image_ids)
-        query_ids = list(query_ids)
-
-        with open(os.path.join(dataset_name, "pseudo_queries.json"), "w") as f:
-            json.dump(psuedo_queries, f, indent=4)
-
-        with open(os.path.join(dataset_name, "query_ids.json"), "w") as f:
-            json.dump(query_ids, f, indent=4)
-
-        with open(os.path.join(dataset_name, "image_ids.json"), "w") as f:
-            json.dump(image_ids, f, indent=4)
-
-        return psuedo_queries, query_ids, image_ids
+        return psuedo_queries, qrels

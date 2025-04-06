@@ -12,9 +12,7 @@ DATASETS = [
 ]
 
 MODELS = {
-    "Metric-AI/ColQwen2.5-3b-multilingual-v1.0": [ColQwen2_5, ColQwen2_5_Processor],
     "Metric-AI/colqwen2.5-3b-multilingual": [ColQwen2_5, ColQwen2_5_Processor],
-    "vidore/colqwen2.5-v0.2": [ColQwen2_5, ColQwen2_5_Processor],
 }
 
 # download datasets and generate pseudo queries first
@@ -27,7 +25,7 @@ evaluator.run(
     top_k=4, 
     top_p=0.9, 
     temperature=1.0, 
-    num_pqueries = 5,
-    limit_corpus_size=None
+    num_pqueries = 2,
+    limit_corpus_size=5
 )
     

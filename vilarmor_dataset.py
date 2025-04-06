@@ -3,155 +3,166 @@ import os
 import json
 from pseudo_query import PseudoQueryGenerator
 from PIL import Image
-import io
+from tqdm import tqdm
+
 
 class ViLARMoRDataset:
-    def __init__(self, name:str, corpus_size_limit:int=None, 
-                 generator: PseudoQueryGenerator = None):
+    def __init__(
+        self,
+        name: str,
+        generator: PseudoQueryGenerator,
+        load_pseudos: bool,
+        dataset_size_limit: int,
+    ):
         self.name = name
         self.corpus: Dataset = None
         self.queries: Dataset = None
         self.qrels: Dataset = None
 
-        if(os.path.exists(os.path.join(self.name, "corpus"))):
-            self.load_corpus()
+        if not os.path.exists(self.name):
+            corpus_data = self._download_corpus()
+            queries_data, qrels_data = self._download_queries_qrels()
+            os.makedirs(self.name, exist_ok=False)
+            corpus_dir = os.path.join(self.name, "corpus")
+            images_dir = os.path.join(corpus_dir, "images")
+            os.makedirs(corpus_dir, exist_ok=False)
+            os.makedirs(images_dir, exist_ok=False)
+            corpus_id_image_list = []
+            tqdm_images = tqdm(
+                corpus_data, desc=f"Saving images for {self.name}", total=len(corpus_data)
+            )
+            for item in tqdm_images:
+                item["image-obj"].save(os.path.join(images_dir, f"{item["corpus-id"]}.png"))
+                corpus_id_image_list.append(
+                    {"corpus-id":item["corpus-id"], 
+                     "image-path":item["image-path"]})
 
-        if self.corpus is None:
-            self.download_corpus(name, corpus_size_limit)
+            image_map_path = os.path.join(corpus_dir, "corpus_id_image_map.json")
+            self._save_data(corpus_id_image_list, image_map_path)
+            self._save_data(queries_data, os.path.join(self.name, "queries.json"))
+            self._save_data(qrels_data, os.path.join(self.name, "qrels.json"))
 
         if generator is not None:
-            pseudo_queries, pseudo_qrel = generator.generate(
-                dataset_name=name,
-                corpus=self.corpus,
-            )
-            self.queries = pseudo_queries
-            self.qrels = pseudo_qrel
+            self._generate_pseudos(generator)
 
-            with open(os.path.join(name, "pseudo_queries.json"), "w") as f:
-                json.dump(pseudo_queries, f, indent=4)
-
-            with open(os.path.join(name, "pseudo_pqrels.json"), "w") as f:
-                json.dump(pseudo_qrel, f, indent=4)
+        self.corpus = self._load_corpus(dataset_size_limit)
+        if load_pseudos:
+            self.queries, self.qrels = self._load_pseudos(dataset_size_limit)
         else:
-            self.load_queries()
-            self.load_qrels()
+            self.queries, self.qrels = self._load_trues(dataset_size_limit)
 
-        if self.queries is None or self.qrels is None:
-            raise ValueError(
-                "Queries or qrels not found.\n"
-                "Provide a generator to generate pseudo queries and qrels.\n")
-    
-    def export_corpus_images_with_mapping(self, output_dir: str):
-        os.makedirs(output_dir, exist_ok=True)
-        image_mapping = {}
-
-        for item in self.corpus:
-            corpus_id = str(item["corpus-id"])
-            image = item["image"]
-
-            if not isinstance(image, Image.Image):
-                print(f"Warning: corpus_id {corpus_id} has invalid image object.")
-                continue
-
-            image_dir = os.path.join(output_dir, "image")
-            os.makedirs(image_dir, exist_ok=True)
-            image_filename = f"{corpus_id}.png"
-            image_path = os.path.join(image_dir, image_filename)
-
-            try:
-                image.save(image_path)
-                image_mapping[corpus_id] = image_filename
-            except Exception as e:
-                print(f"Failed to save image {image_filename}: {e}")
-
-        mapping_path = os.path.join(output_dir, "corpus_image_map.json")
-        with open(mapping_path, "w") as f:
-            json.dump(image_mapping, f, indent=4)
-
-        print(f"Saved {len(image_mapping)} images and mapping to {output_dir}")
-
-    def download_corpus(self, name, corpus_size_limit):
-        try:
-            corpus: Dataset = load_dataset(name, "corpus", split="test")
-        except Exception as e:
-            print(f"Failed to download dataset {name}: {e}")
-            return
-
-        if corpus_size_limit:
-            corpus = corpus.select(range(corpus_size_limit))
-
-        # Convert raw bytes to PIL.Image for every item
-        corpus_data = []
-        for item in corpus:
-            image_obj = item["image"]
-
-            if isinstance(image_obj, dict) and "bytes" in image_obj:
-                img = Image.open(io.BytesIO(image_obj["bytes"])).convert("RGB")
-            elif isinstance(image_obj, Image.Image):
-                img = image_obj.convert("RGB")
-            else:
-                print(f"Unrecognized image format for corpus-id {item['corpus-id']}, skipping.")
-                continue
-
-            corpus_data.append({
-                "corpus-id": item["corpus-id"],
-                "image": img
-            })
-
-        self.corpus = Dataset.from_list(corpus_data)
-
-        # Save corpus as images + mapping
-        corpus_dir = os.path.join(name, "corpus")
-        self.export_corpus_images_with_mapping(corpus_dir)
-
-
-    def load_corpus(self):
+    def _generate_pseudos(self, generator: PseudoQueryGenerator):
         """
-        Loads the corpus from a directory containing corpus_image_map.json and image files.
-        Reconstructs a HuggingFace Dataset object in-memory from the image paths.
+        Generate pseudo queries and qrel from corpus.
         """
+        psuedo_queries, qrels = generator.generate(
+            dataset_name=self.name,
+            corpus=self.corpus,
+        )
+
+        with open(os.path.join(self.name, "pseudo_queries.json"), "w") as f:
+            json.dump(psuedo_queries, f, indent=4)
+
+        with open(os.path.join(self.name, "pseudo_pqrels.json"), "w") as f:
+            json.dump(qrels, f, indent=4)
+
+    def _download_corpus(self):
+        corpus: Dataset = load_dataset(self.name, "corpus")["test"]
+
         corpus_dir = os.path.join(self.name, "corpus")
-        mapping_path = os.path.join(corpus_dir, "corpus_image_map.json")
+        images_dir = os.path.join(corpus_dir, "images")
 
-        if not os.path.exists(mapping_path):
-            raise FileNotFoundError(f"Corpus mapping file not found at {mapping_path}")
+        corpus_data = []
+
+        tqdm_corpus = tqdm(
+            corpus, desc=f"Downloading images for {self.name}", total=len(corpus)
+        )
+        for item in tqdm_corpus:
+            image_obj = item["image"]
+            image_id = item["corpus-id"]
+            image_filename = f"{image_id}.png"
+            image_path = os.path.join(images_dir, image_filename)
+            corpus_data.append(
+                {
+                    "corpus-id": image_id,
+                    "image-path": image_path,
+                    "image-obj": image_obj,
+                }
+            )
+
+        return corpus_data
+
+    @staticmethod
+    def _save_data(data, path):
+        with open(path, "w") as f:
+            json.dump(data, f, indent=4)
+
+    def _download_queries_qrels(self):
+        queries: Dataset = load_dataset(self.name, "queries")["test"]
+        qrels: Dataset = load_dataset(self.name, "qrels")["test"]
+
+        queries_data = []
+        qrels_data = []
+
+        for item in queries:
+            queries_data.append({"query-id": item["query-id"], "query": item["query"]})
+
+        for item in qrels:
+            qrels_data.append(
+                {
+                    "query-id": item["query-id"],
+                    "corpus-id": item["corpus-id"],
+                    "score": item["score"],
+                }
+            )
+
+        return queries_data, qrels_data
+
+    def _load_corpus(self, dataset_size_limit: int):
+        corpus_dir = os.path.join(self.name, "corpus")
+        mapping_path = os.path.join(corpus_dir, "corpus_id_image_map.json")
+        corpus_data = []
 
         with open(mapping_path, "r") as f:
             image_mapping = json.load(f)
 
-        corpus_data = []
-        for corpus_id, filename in image_mapping.items():
-            image_path = os.path.join(corpus_dir, "image", filename)
+        corpus_data = image_mapping[:dataset_size_limit]
 
-            if not os.path.exists(image_path):
-                print(f"Warning: Image file {filename} not found, skipping.")
-                continue
+        return Dataset.from_list(corpus_data)
 
-            try:
-                image = Image.open(image_path).convert("RGB")
-            except Exception as e:
-                print(f"Failed to load image {image_path}: {e}")
-                continue
+    def _load_queries_qrels(
+        self, querys_path: str, qrels_path: str, dataset_size_limit: int
+    ):
+        with open(qrels_path, "r") as f:
+            qrels = json.load(f)
 
-            corpus_data.append({
-                "corpus-id": int(corpus_id),
-                "image": image
-            })
+        with open(querys_path, "r") as f:
+            queries = json.load(f)
 
+        queries = queries[:dataset_size_limit]
+        qrels = qrels[:dataset_size_limit]
 
-        # Rebuild the HuggingFace Dataset from list
-        self.corpus = Dataset.from_list(corpus_data)
+        return Dataset.from_list(queries), Dataset.from_list(qrels)
 
-
-    def load_queries(self):
+    def _load_pseudos(self, dataset_size_limit: int):
         pq_path = os.path.join(self.name, "pseudo_queries.json")
-        queries = load_dataset("json", data_files=pq_path)
-        self.queries = queries["train"]
-
-    def load_qrels(self):
         pqrel_path = os.path.join(self.name, "pseudo_pqrels.json")
-        qrels = load_dataset("json", data_files=pqrel_path)
-        self.qrels = qrels["train"]
+
+        return self._load_queries_qrels(
+            querys_path=pq_path,
+            qrels_path=pqrel_path,
+            dataset_size_limit=dataset_size_limit,
+        )
+
+    def _load_trues(self, dataset_size_limit: int):
+        queries_path = os.path.join(self.name, "queries.json")
+        qrels_path = os.path.join(self.name, "qrels.json")
+
+        return self._load_queries_qrels(
+            querys_path=queries_path,
+            qrels_path=qrels_path,
+            dataset_size_limit=dataset_size_limit,
+        )
 
     def get_image(self, corpus_id: int):
         # Filter the dataset to find items with matching corpus-id
@@ -166,10 +177,8 @@ class ViLARMoRDataset:
         if len(filtered_images) > 1:
             raise ValueError(f"Duplicate corpus_id found: {corpus_id}\n")
 
-        image = filtered_images[0]["image"]
-
-        if not isinstance(image, Image.Image):
-            raise ValueError(f"Image for corpus_id {corpus_id} is not a valid PIL Image")
+        image_path = filtered_images[0]["image-path"]
+        image = Image.open(image_path)
 
         return image
 
@@ -195,3 +204,20 @@ class ViLARMoRDataset:
             query_ids.add(qrel["query-id"])
             image_ids.add(qrel["corpus-id"])
         return list(query_ids), list(image_ids)
+
+
+if __name__ == "__main__":
+    # Test without generator
+    dataset = ViLARMoRDataset(
+        name="vidore/docvqa_test_subsampled_beir",
+        generator=None,
+        load_pseudos=False,
+    )
+    print("Corpus:", dataset.corpus)
+    print("Queries:", dataset.queries)
+    print("Qrels:", dataset.qrels)
+    print("Image IDs:", dataset.get_query_image_ids())
+    image = dataset.get_image(4)
+    image.save("test_image_4.png")
+    print("Image:", dataset.get_image(4))
+    print("Query:", dataset.get_query(1))

@@ -9,7 +9,6 @@ from math import log10
 from collections import defaultdict
 import torch
 import torch.nn.functional as F
-from datasets import Dataset, load_dataset
 from transformers import PreTrainedModel, ProcessorMixin
 
 from vidore_benchmark.evaluation.vidore_evaluators.base_vidore_evaluator import (
@@ -26,7 +25,7 @@ from fusion import get_fusion_per_query
 from pseudo_query import PseudoQueryGenerator
 
 
-BATCH_SIZE = 1
+BATCH_SIZE = 4
 
 
 class ViLARMoREvaluator(BaseViDoReEvaluator):
@@ -55,6 +54,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         self.doc_importance_scores: dict[str, float] = {}
         self.pseudo_rel_list: dict[str, dict[str, int]] = {}
         self.model_ndgc: dict[str, float] = {}
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # Dataset column names
         self.corpus_id_column = "corpus-id"
@@ -162,7 +162,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
         return pqrels
 
-    def judge_all_datasets(self, top_k: int):
+    def judge_all_datasets(self, top_k: int, limit_corpus_size: int):
         """
         Judge all the datasets using reduced set of ranked documents (images)
         for each dataset and associated pseudo queries.
@@ -172,7 +172,12 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         judge = ViLARMoRJudge()
         for dataset_name in self.ds_names:
             print(f"Generating relevance list for {dataset_name}")
-            self.ds = ViLARMoRDataset(name=dataset_name)
+            self.ds = ViLARMoRDataset(
+                name=dataset_name,
+                generator=None,
+                load_pseudos=True,
+                limit_corpus_size=limit_corpus_size,
+            )
 
             prl = self.pseudo_relevance_judgement(judge, top_k)
             self.pseudo_rel_list[dataset_name] = prl
@@ -180,7 +185,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         with open(os.path.join(dataset_name, "pseudo_rel_list.json"), "w") as file:
             json.dump(self.pseudo_rel_list, file, indent=4)
 
-    def score_all(self):
+    def score_all(self, limit_corpus_size):
         # get the scores for each retriever and dataset pairing
         scores = {}
         for model_name in self.model_conf:
@@ -191,7 +196,12 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
             scores[model_name] = {}
             for ds_name in self.ds_names:
-                self.ds = ViLARMoRDataset(name=ds_name)
+                self.ds = ViLARMoRDataset(
+                    name=ds_name,
+                    generator=None,
+                    load_pseudos=True,
+                    limit_corpus_size=limit_corpus_size,
+                )
                 score = self.score_single_model_corpus(
                     batch_query=BATCH_SIZE,
                     batch_image=BATCH_SIZE,
@@ -225,7 +235,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
         return results
 
-    def rank_all(self, scores):
+    def rank_all(self, scores, limit_corpus_size):
         """
         Rank documents for each dataset using query-specific fusion instead of global aggregation.
         scores are indexed.  Need to be converted back to image and query id
@@ -233,7 +243,12 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         for ds_name in self.ds_names:
             print(f"Making the document importance ranking for {ds_name}")
 
-            self.ds = ViLARMoRDataset(name=ds_name)
+            self.ds = ViLARMoRDataset(
+                name=ds_name,
+                generator=None,
+                load_pseudos=True,
+                limit_corpus_size=limit_corpus_size,
+            )
             query_ids, image_ids = self.ds.get_query_image_ids()
 
             dataset_scores = []
@@ -310,15 +325,19 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
         return self.model_ndgc
 
-
-
-    def init_datasets(self, top_p, temperature, num_pqueries, corpus_size_limit):
-        generator = PseudoQueryGenerator(top_p, temperature, num_pqueries)
+    def init_datasets(self, top_p, temperature, num_pqueries, limit_corpus_size):
+        """
+        Downloads datasests and generates pseudo queries if needed
+        """
         for name in self.ds_names:
             if not os.path.exists(name):
-                vilarmor_ds = ViLARMoRDataset(
-                    name=name, corpus_size_limit=corpus_size_limit, 
-                    generator=generator)
+                generator = PseudoQueryGenerator(top_p, temperature, num_pqueries)
+                ViLARMoRDataset(
+                    name=name,
+                    generator=generator,
+                    load_pseudos=False,
+                    limit_corpus_size=limit_corpus_size,
+                )
 
     def run(self, top_k, top_p, temperature, num_pqueries, limit_corpus_size):
         print("Begin ViLARMoR Evaluation")

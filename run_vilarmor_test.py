@@ -25,10 +25,10 @@ evaluator = ViLARMoREvaluator(
 )
 
 evaluator.run(
-    top_k=100, 
-    top_p=0.9,
-    temperature=1.0,
-    num_pqueries = 5,
-    corpus_sample_size=100
+    judge_top_m=100, 
+    gen_top_p=0.9,
+    gen_temperature=1.0,
+    gen_num_pqueries = 10,
+    gen_corpus_sample_size=100
 )
     

@@ -1,7 +1,6 @@
 from datasets import load_dataset, Dataset
 import os
 import json
-from pseudo_query import PseudoQueryGenerator
 from PIL import Image
 from tqdm import tqdm
 
@@ -17,6 +16,7 @@ class ViLARMoRDataset:
         self.queries: Dataset = None
         self.qrels: Dataset = None
 
+        # download the full dataset if it doesn't exist
         if not os.path.exists(self.name):
             corpus_data = self._download_corpus()
             queries_data, qrels_data = self._download_queries_qrels()
@@ -46,6 +46,8 @@ class ViLARMoRDataset:
             self._load_pseudos()
         else:
             self._load_trues()
+
+        self.corpus = self._load_corpus_from(None)
 
     def _download_corpus(self):
         corpus: Dataset = load_dataset(self.name, "corpus")["test"]
@@ -145,9 +147,6 @@ class ViLARMoRDataset:
             qrels_path=pqrel_path,
         )
 
-        _, image_ids = self.get_query_image_ids()
-        self.corpus = self._load_corpus_from(image_ids)
-
     def _load_trues(self):
         queries_path = os.path.join(self.name, "queries.json")
         qrels_path = os.path.join(self.name, "qrels.json")
@@ -156,9 +155,6 @@ class ViLARMoRDataset:
             querys_path=queries_path,
             qrels_path=qrels_path,
         )
-
-        # load full corpus without filtering list
-        self.corpus = self._load_corpus_from(None)
 
     def get_image(self, corpus_id: int):
         # Filter the dataset to find items with matching corpus-id
@@ -193,6 +189,11 @@ class ViLARMoRDataset:
         return filtered_queries[0]["query"]
 
     def get_query_image_ids(self):
+        """
+        Get the query and image IDs from the qrels.  If using pseudo queries,
+        the image IDs will be a smaller subset of the corpus IDs from the
+        original dataset.
+        """
         query_ids = set()
         image_ids = set()
         for qrel in self.qrels:

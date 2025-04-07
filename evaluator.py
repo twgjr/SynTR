@@ -5,7 +5,6 @@ the LARMOR method.
 
 import json
 import os
-from math import log10
 from collections import defaultdict
 import torch
 import torch.nn.functional as F
@@ -16,8 +15,6 @@ from vidore_benchmark.evaluation.vidore_evaluators.base_vidore_evaluator import 
     BaseViDoReEvaluator,
 )
 from colpali_engine.utils.processing_utils import BaseVisualRetrieverProcessor
-from vidore_benchmark.retrievers.base_vision_retriever import BaseVisionRetriever
-
 
 from vilarmor_retriever import ViLARMoRRetriever
 from judge import ViLARMoRJudge
@@ -42,19 +39,13 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
     def __init__(
         self,
-        ds_names: list[str],
         model_conf: dict[str : tuple[PreTrainedModel, ProcessorMixin]],
     ):
 
         super().__init__(vision_retriever=None)
         self.ds: ViLARMoRDataset = None
         self.vision_retriever: ViLARMoRRetriever = None
-        self.ds_names = ds_names
         self.model_conf = model_conf
-        self.doc_ranking: dict[str, float] = {}
-        self.doc_importance_scores: dict[str, float] = {}
-        self.pseudo_rel_list: dict[str, dict[str, int]] = {}
-        self.model_ndgc: dict[str, float] = {}
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # Dataset column names
@@ -63,6 +54,35 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         self.query_column = "query"
         self.image_column = "image"
         self.score_column = "score"
+
+
+    def generate_psuedos(self, name, top_p, temperature, num_pqueries, 
+                        corpus_sample_size):
+        """
+        Downloads datasest and generates pseudo queries if needed
+        """
+        generator = PseudoQueryGenerator(top_p=top_p, temperature=temperature)
+        self.ds = ViLARMoRDataset(name=name,load_pseudos=False)
+        pq_path = os.path.join(name, "pseudo_queries.json")
+        pqrel_path = os.path.join(name, "pseudo_qrels.json")
+
+        if not os.path.exists(pq_path) or not os.path.exists(pqrel_path):
+            psuedo_queries, psuedo_qrels = generator.generate(
+                                    dataset_name=name,
+                                    corpus=self.ds.corpus,
+                                    corpus_sample_size=corpus_sample_size,
+                                    num_pqueries=num_pqueries
+                                )
+
+            with open(pq_path, "w") as f:
+                json.dump(psuedo_queries, f, indent=4)
+
+            with open(pqrel_path, "w") as f:
+                json.dump(psuedo_qrels, f, indent=4)
+
+        # reload the dataset with the generated pseudo queries and qrels
+        self.ds = ViLARMoRDataset(name=name, load_pseudos=True)
+        
 
     def evaluate_dataset(
         self, ds, batch_query, batch_passage, batch_score, **kwargs
@@ -132,52 +152,8 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
         return scores
 
-    def pseudo_relevance_judgement(
-        self, judge: ViLARMoRJudge, top_k: int
-    ) -> dict[str, dict[str, int]]:
-        """
-        Create a relevance dictionary of the ranked documents using LLM and pseudo queries.
-        """
-        pqrels = defaultdict(dict)  # Change to dictionary format
-
-        # slice the important documents
-        slice_docs = dict(list(self.doc_importance_scores.items())[:top_k])
-
-        query_progress = tqdm(self.ds.queries[self.query_id_column], 
-                                desc="Query")
-        for query_id in query_progress:
-            for corpus_id_key in slice_docs:
-                corpus_id = int(corpus_id_key)
-                image = self.ds.get_image(corpus_id)
-                query = self.ds.get_query(query_id)
-                judgment = judge.is_relevant(query, image)
-                pqrels[str(query_id)][corpus_id] = judgment  # Store in correct format
-
-        return pqrels
-
-    def judge(self, top_k: int):
-        """
-        Judge all the datasets using reduced set of ranked documents (images)
-        for each dataset and associated pseudo queries.
-
-        top_k is the number of "important" documents to judge
-        """
-        judge = ViLARMoRJudge()
-        for dataset_name in self.ds_names:
-            print(f"Generating relevance list for {dataset_name}")
-            self.ds = ViLARMoRDataset(
-                name=dataset_name,
-                load_pseudos=True,
-            )
-
-            prl = self.pseudo_relevance_judgement(judge, top_k)
-            self.pseudo_rel_list[dataset_name] = prl
-
-        with open(os.path.join(dataset_name, "pseudo_rel_list.json"), "w") as file:
-            json.dump(self.pseudo_rel_list, file, indent=4)
-
     def score(self):
-        # get the scores for each retriever and dataset pairing
+        # get the scores for each retriever model for the loaded dataset 
         scores = {}
         for model_name in self.model_conf:
             model_class, processor_class = self.model_conf[model_name]
@@ -185,18 +161,12 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                 model_name, model_class, processor_class
             )
 
-            scores[model_name] = {}
-            for ds_name in self.ds_names:
-                self.ds = ViLARMoRDataset(
-                    name=ds_name,
-                    load_pseudos=True,
-                )
-                score = self.score_single_model_corpus(
-                    batch_query=BATCH_SIZE,
-                    batch_image=BATCH_SIZE,
-                    batch_score=BATCH_SIZE,
-                )
-                scores[model_name][ds_name] = score
+            score = self.score_single_model_corpus(
+                batch_query=BATCH_SIZE,
+                batch_image=BATCH_SIZE,
+                batch_score=BATCH_SIZE,
+            )
+            scores[model_name] = score
 
         return scores
 
@@ -206,152 +176,142 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         """
         results = {}
 
-        for ds_name in self.ds_names:
-            results[ds_name] = {}
-            query_ids, image_ids = self.ds.get_query_image_ids()
-            for model_name in self.model_conf:
-                results[ds_name][model_name] = {}
-                for query_idx, query_id in enumerate(query_ids):
-                    results[ds_name][model_name][str(query_id)] = {}
-                    for img_idx, image_id in enumerate(image_ids):
-                        results[ds_name][model_name][str(query_id)][str(image_id)] = (
-                            scores[model_name][ds_name][query_idx][img_idx].item()
-                        )
+        query_ids, image_ids = self.ds.get_query_image_ids()
+        for model_name in self.model_conf:
+            results[model_name] = {}
+            for query_idx, query_id in enumerate(query_ids):
+                results[model_name][str(query_id)] = {}
+                for img_idx, image_id in enumerate(image_ids):
+                    results[model_name][str(query_id)][str(image_id)] = (
+                        scores[model_name][query_idx][img_idx].item()
+                    )
 
-                with open(os.path.join(ds_name, "results.json"), "w") as file:
-                    json.dump(results[ds_name], file, indent=4)
+            with open(os.path.join(self.ds.name, "results.json"), "w") as file:
+                json.dump(results, file, indent=4)
 
         return results
 
-    def rank(self, scores):
+    def rank(self):
         """
         Aggregate document rankings for all models for given dataset.
-        Scores is a matrix of queries vs images where each element is a
-        similarity score.
         """
-        for ds_name in self.ds_names:
-            print(f"Aggregating models rankings for {ds_name}")
+        ranking_path = os.path.join(self.ds.name, "ranking.json")
+        if not os.path.exists(ranking_path):
+            print(f"Scoring all models for {self.ds.name}")
+            scores = self.score()
+            # convert the scores to the BeIR qrel format and save them to 
+            # results.json
+            self.scores_to_results(scores)
 
-            self.ds = ViLARMoRDataset(
-                name=ds_name,
-                load_pseudos=True,
-            )
             query_ids, image_ids = self.ds.get_query_image_ids()
 
-            dataset_scores = []
-            for model_name in self.model_conf:
-                dataset_scores.append(scores[model_name][ds_name])
-
-            # fuse doc rankings by query for all models
-            self.doc_ranking[ds_name] = get_fusion_per_query(
-                dataset_scores, query_ids, image_ids
+            print(f"Ranking all models for {self.ds.name}")
+            ranking = get_fusion_per_query(
+                scores, query_ids, image_ids
             )
 
-            with open(os.path.join(ds_name, "doc_ranking.json"), "w") as file:
-                json.dump(self.doc_ranking[ds_name], file, indent=4)
+            with open(ranking_path, "w") as file:
+                json.dump(ranking, file, indent=4)
 
-    def important_docs(self):
+    def pseudo_relevance_judgement(
+        self, judge: ViLARMoRJudge, top_m: int
+    ) -> dict[str, dict[str, int]]:
         """
-        Fuse the query-image rankings by frequency of image id in ordered
-        position for each query
-        add to the important score of each document with inverse log of its position
+        Create pseudo query relevance judgments for the ranks lists made by 
+        scoring the retriever models results using the pseudo queries.
+
+        Not to be confused with the pseudo_qrels made directly from the dataset
+        using the pseudo query generator, which only have relevance for the 
+        documents used to generate queries.
+
+        This judges the retrieved documents which may include other documents
+        not used to generate the pseudo queries.
         """
-        doc_importance_scores = defaultdict(float)
-        for ds_name in self.ds_names:
-            for query_id in self.doc_ranking[ds_name]:
-                for position, image_id in enumerate(
-                    self.doc_ranking[ds_name][query_id]
-                ):
-                    discounted_score = 1 / (1 + log10(position + 1))  # Log discount
-                    doc_importance_scores[
-                        image_id
-                    ] += discounted_score  # Accumulate score
+        pqrels = defaultdict(dict)  # Change to dictionary format
 
-        sorted_doc_importance_scores = dict(
-            sorted(
-                doc_importance_scores.items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )
-        )
+        ranking = None
+        ranking_path = os.path.join(self.ds.name, "ranking.json")
+        with open(ranking_path, "r") as file:
+            ranking = json.load(file)
 
-        self.doc_importance_scores = sorted_doc_importance_scores
+        queries = ranking.keys()
 
-        with open(os.path.join(ds_name, "doc_importance_scores.json"), "w") as file:
-            json.dump(self.doc_importance_scores, file, indent=4)
+        for query_id_key in tqdm(queries, desc="Query"):
+            # get top_m documents for each query from ranking
+            image_id_keys = ranking[query_id_key][:top_m]
+            query_id = int(query_id_key)
+            
+            for corpus_id_key in image_id_keys:
+                corpus_id = int(corpus_id_key)
+                image = self.ds.get_image(corpus_id)
+                query = self.ds.get_query(query_id)
+                judgment = judge.is_relevant(query, image)
+                # qrel only stores relevant query-document pairs
+                if judgment is 1:
+                    pqrels[str(query_id)][corpus_id] = 1
 
+        return pqrels
+
+    def judge(self, top_m: int):
+        """
+        Judges the relevance of the top_k documents for each pseudo query of 
+        each dataset using the VLM model.
+        """
+        judge = ViLARMoRJudge()
+        print(f"Generating relevance list for {self.ds.name}")
+        # judge the top_m documents for each pseudo query
+        pseudo_qrel_judge = self.pseudo_relevance_judgement(judge, top_m)
+
+        with open(os.path.join(self.ds.name, "pseudo_qrel_judge.json"), "w") as file:
+            json.dump(pseudo_qrel_judge, file, indent=4)
+
+    @staticmethod
     def str_keys_qrels(qrels):
         return {
             str(qid): {str(did): rel for did, rel in docs.items()}
             for qid, docs in qrels.items()
         }
 
-    def evaluate(self, results) -> dict[str, float]:
+    def evaluate(self) -> dict[str, float]:
         """
         Compute the final ranking of NDGC@10 using the pseudo relevance lists and the ranked
         output from the retrievers.
         """
-        for ds_name in self.pseudo_rel_list:
-            p_rel_list = str_keys_qrels(self.pseudo_rel_list[ds_name])
-            self.model_ndgc[ds_name] = {}
+        print(f"Computing metrics for {self.ds.name}")
 
-            if ds_name not in results:
-                raise ValueError(f"Document ranking missing for dataset {ds_name}")
+        pseudo_qrel_judge = {}
+        with open("pseudo_qrel_judge.json", "r") as file:
+            pseudo_qrel_judge = json.load(file)
 
-            for model_name in self.model_conf:
-                print(
-                    f"Computing final nDCG@10 scores for {model_name} using: {results[ds_name][model_name]}"
-                )
-                metrics = self.compute_retrieval_scores(
-                    qrels=p_rel_list,
-                    results=results[ds_name][model_name],  # Pass the ranked results
-                    ignore_identical_ids=False,
-                )
+        results = {}
+        with open("results.json", "r") as file:
+            results = json.load(file)
 
-                ndcg_at_10 = metrics["ndcg_at_10"]
+        final_metrics = {}
+        p_qrel_judge = self.str_keys_qrels(pseudo_qrel_judge)
+        final_metrics = {}
 
-                self.model_ndgc[ds_name][model_name] = ndcg_at_10
-
-                with open(os.path.join(ds_name, "ndcg.json"), "w") as file:
-                    json.dump(self.model_ndgc[ds_name], file, indent=4)
-
-        return self.model_ndgc
-
-    def init_datasets(self, top_p, temperature, num_pqueries, 
-                        corpus_sample_size):
-        """
-        Downloads datasests and generates pseudo queries if needed
-        """
-        generator = PseudoQueryGenerator(top_p=top_p, temperature=temperature)
-        for name in self.ds_names:
-            ds = ViLARMoRDataset(
-                name=name,
-                load_pseudos=False,
+        for model_name in self.model_conf:
+            print(f"Computing final metrics for {model_name}")
+            metrics = self.compute_retrieval_scores(
+                qrels=p_qrel_judge,
+                results=results[model_name],  # Pass the ranked results
+                ignore_identical_ids=False,
             )
-            pq_path = os.path.join(name, "pseudo_queries.json")
-            pqrel_path = os.path.join(name, "pseudo_qrels.json")
 
-            if not os.path.exists(pq_path) or not os.path.exists(pqrel_path):
-                psuedo_queries, psuedo_qrels = generator.generate(
-                                        dataset_name=name,
-                                        corpus=ds.corpus,
-                                        corpus_sample_size=corpus_sample_size,
-                                        num_pqueries=num_pqueries
-                                    )
+            final_metrics[model_name] = metrics
 
-                with open(pq_path, "w") as f:
-                    json.dump(psuedo_queries, f, indent=4)
+            with open(os.path.join(self.ds.name, "metrics.json"), "w") as file:
+                json.dump(final_metrics, file, indent=4)
 
-                with open(pqrel_path, "w") as f:
-                    json.dump(psuedo_qrels, f, indent=4)
 
-    def run(self, top_k, top_p, temperature, num_pqueries, corpus_sample_size):
+    def run(self, judge_top_m, gen_top_p, gen_temperature, gen_num_pqueries, 
+            gen_corpus_sample_size):
         print("Begin ViLARMoR Evaluation")
-        self.init_datasets(top_p, temperature, num_pqueries, corpus_sample_size)
-        scores = self.score()
-        self.rank(scores)
-        self.important_docs()
-        self.judge(top_k=top_k)
-        results = self.scores_to_results(scores)
-        self.evaluate(results)
+        for ds_name in self.ds_names:
+            self.generate_psuedos(ds_name, gen_top_p, gen_temperature, gen_num_pqueries, 
+                            gen_corpus_sample_size)
+            self.rank()
+            self.judge(top_m=judge_top_m)
+            self.evaluate()
         print("ViLARMoR Evaluation Complete")

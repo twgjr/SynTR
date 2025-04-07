@@ -28,6 +28,6 @@ evaluator.run(
     top_p=0.9, 
     temperature=1.0, 
     num_pqueries = 5,
-    limit_corpus_size=None
+    dataset_size_limit=None
 )
     

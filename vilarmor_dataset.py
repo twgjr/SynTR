@@ -10,9 +10,7 @@ class ViLARMoRDataset:
     def __init__(
         self,
         name: str,
-        generator: PseudoQueryGenerator,
         load_pseudos: bool,
-        dataset_size_limit: int,
     ):
         self.name = name
         self.corpus: Dataset = None
@@ -28,8 +26,10 @@ class ViLARMoRDataset:
             os.makedirs(corpus_dir, exist_ok=False)
             os.makedirs(images_dir, exist_ok=False)
             corpus_id_image_list = []
+
+            print(f"Saving images for {self.name}")
             tqdm_images = tqdm(
-                corpus_data, desc=f"Saving images for {self.name}", total=len(corpus_data)
+                corpus_data, desc=f"Saving", total=len(corpus_data)
             )
             for item in tqdm_images:
                 item["image-obj"].save(os.path.join(images_dir, f"{item["corpus-id"]}.png"))
@@ -41,30 +41,11 @@ class ViLARMoRDataset:
             self._save_data(corpus_id_image_list, image_map_path)
             self._save_data(queries_data, os.path.join(self.name, "queries.json"))
             self._save_data(qrels_data, os.path.join(self.name, "qrels.json"))
-
-        if generator is not None:
-            self._generate_pseudos(generator)
-
-        self.corpus = self._load_corpus(dataset_size_limit)
+            
         if load_pseudos:
-            self.queries, self.qrels = self._load_pseudos(dataset_size_limit)
+            self._load_pseudos()
         else:
-            self.queries, self.qrels = self._load_trues(dataset_size_limit)
-
-    def _generate_pseudos(self, generator: PseudoQueryGenerator):
-        """
-        Generate pseudo queries and qrel from corpus.
-        """
-        psuedo_queries, qrels = generator.generate(
-            dataset_name=self.name,
-            corpus=self.corpus,
-        )
-
-        with open(os.path.join(self.name, "pseudo_queries.json"), "w") as f:
-            json.dump(psuedo_queries, f, indent=4)
-
-        with open(os.path.join(self.name, "pseudo_pqrels.json"), "w") as f:
-            json.dump(qrels, f, indent=4)
+            self._load_trues()
 
     def _download_corpus(self):
         corpus: Dataset = load_dataset(self.name, "corpus")["test"]
@@ -74,8 +55,9 @@ class ViLARMoRDataset:
 
         corpus_data = []
 
+        print(f"Downloading images for {self.name}")
         tqdm_corpus = tqdm(
-            corpus, desc=f"Downloading images for {self.name}", total=len(corpus)
+            corpus, desc=f"Downloading", total=len(corpus)
         )
         for item in tqdm_corpus:
             image_obj = item["image"]
@@ -118,7 +100,7 @@ class ViLARMoRDataset:
 
         return queries_data, qrels_data
 
-    def _load_corpus(self, dataset_size_limit: int):
+    def _load_corpus_from(self, image_ids: list[int]):
         corpus_dir = os.path.join(self.name, "corpus")
         mapping_path = os.path.join(corpus_dir, "corpus_id_image_map.json")
         corpus_data = []
@@ -126,43 +108,57 @@ class ViLARMoRDataset:
         with open(mapping_path, "r") as f:
             image_mapping = json.load(f)
 
-        corpus_data = image_mapping[:dataset_size_limit]
+        corpus_data = []
+
+        def add_corpus_data(corpus_id, image_path):
+            image = Image.open(image_path)
+            corpus_item = {"corpus-id":corpus_id, "image":image}
+            corpus_data.append(corpus_item)
+
+        if image_ids:
+            for corpus_id in image_ids:
+                image_path = image_mapping[corpus_id]['image-path']
+                add_corpus_data(corpus_id, image_path)
+        else:
+            for item in image_mapping:
+                corpus_id = item['corpus-id']
+                image_path = image_mapping[corpus_id]['image-path']
+                add_corpus_data(corpus_id, image_path)
 
         return Dataset.from_list(corpus_data)
 
-    def _load_queries_qrels(
-        self, querys_path: str, qrels_path: str, dataset_size_limit: int
-    ):
+    def _load_queries_qrels(self, querys_path: str, qrels_path: str):
         with open(qrels_path, "r") as f:
             qrels = json.load(f)
 
         with open(querys_path, "r") as f:
             queries = json.load(f)
 
-        queries = queries[:dataset_size_limit]
-        qrels = qrels[:dataset_size_limit]
-
         return Dataset.from_list(queries), Dataset.from_list(qrels)
 
-    def _load_pseudos(self, dataset_size_limit: int):
+    def _load_pseudos(self):
         pq_path = os.path.join(self.name, "pseudo_queries.json")
-        pqrel_path = os.path.join(self.name, "pseudo_pqrels.json")
+        pqrel_path = os.path.join(self.name, "pseudo_qrels.json")
 
-        return self._load_queries_qrels(
+        self.queries, self.qrels = self._load_queries_qrels(
             querys_path=pq_path,
             qrels_path=pqrel_path,
-            dataset_size_limit=dataset_size_limit,
         )
 
-    def _load_trues(self, dataset_size_limit: int):
+        _, image_ids = self.get_query_image_ids()
+        self.corpus = self._load_corpus_from(image_ids)
+
+    def _load_trues(self):
         queries_path = os.path.join(self.name, "queries.json")
         qrels_path = os.path.join(self.name, "qrels.json")
 
-        return self._load_queries_qrels(
+        self.queries, self.qrels = self._load_queries_qrels(
             querys_path=queries_path,
             qrels_path=qrels_path,
-            dataset_size_limit=dataset_size_limit,
         )
+
+        # load full corpus without filtering list
+        self.corpus = self._load_corpus_from(None)
 
     def get_image(self, corpus_id: int):
         # Filter the dataset to find items with matching corpus-id
@@ -177,8 +173,7 @@ class ViLARMoRDataset:
         if len(filtered_images) > 1:
             raise ValueError(f"Duplicate corpus_id found: {corpus_id}\n")
 
-        image_path = filtered_images[0]["image-path"]
-        image = Image.open(image_path)
+        image = filtered_images[0]["image"]
 
         return image
 

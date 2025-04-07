@@ -3,6 +3,8 @@ from datasets import Dataset
 import os
 import json
 from tqdm import tqdm
+from PIL import Image
+import random
 
 from transformers import set_seed
 
@@ -11,35 +13,40 @@ set_seed(42)
 
 class PseudoQueryGenerator(BaseVLM):
     def __init__(
-        self, top_p: float = 0.9, temperature: float = 1.0, num_queries: int = 2
-    ):
+        self, top_p: float = 0.9, temperature: float = 1.0):
         super().__init__()
         self.top_p = top_p
         self.temperature = temperature
-        self.num_queries = num_queries
 
     def generate(
         self,
         dataset_name: str,
         corpus: Dataset,
+        corpus_sample_size:int,
+        num_pqueries:int,
     ):
         """
         Generate pseudo queries and qrel from corpus.
         """
         psuedo_queries = []  # ('query-id', 'query')
-        qrels = []  # ('query-id', 'corpus-id', 'relevance')
+        psuedo_qrels = []  # ('query-id', 'corpus-id', 'relevance')
 
         prompt = "Generate a question that the following image can answer. \
             Avoid generating general questions."
 
-        for d in tqdm(range(len(corpus)), desc=f"Processing {dataset_name}"):
-            corpus_id = corpus[d]["corpus-id"]
+        sampled_images = random.sample(range(len(corpus)), k=corpus_sample_size)
 
-            for q in tqdm(range(self.num_queries), desc=f"Generating queries"):
-                qid = q + d * self.num_queries
-                messages = [self.message_template(prompt, corpus[d]["image"])]
+        print(f"Generating queries for {dataset_name}")
+        for s, corpus_index in enumerate(tqdm(sampled_images, desc=f"Generating")):
+            # randomly choose image from corpus up to sample size times
+            corpus_id = corpus[corpus_index]["corpus-id"]
+            image = corpus[corpus_index]["image"]
+
+            for q in range(num_pqueries):
+                qid = q + s * num_pqueries
+                messages = [self.message_template(prompt, image)]
                 pseudo_query = self.response(messages, self.top_p, self.temperature)
                 psuedo_queries.append({"query-id": qid, "query": pseudo_query})
-                qrels.append({"query-id": qid, "corpus-id": corpus_id, "relevance": 1})
+                psuedo_qrels.append({"query-id": qid, "corpus-id": corpus_id, "relevance": 1})
 
-        return psuedo_queries, qrels
+        return psuedo_queries, psuedo_qrels

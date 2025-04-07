@@ -227,7 +227,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         This judges the retrieved documents which may include other documents
         not used to generate the pseudo queries.
         """
-        pqrels = defaultdict(dict)  # Change to dictionary format
+        pqrels = []
 
         ranking = None
         ranking_path = os.path.join(self.ds.name, "ranking.json")
@@ -248,7 +248,12 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                 judgment = judge.is_relevant(query, image)
                 # qrel only stores relevant query-document pairs
                 if judgment is 1:
-                    pqrels[str(query_id)][corpus_id] = 1
+                    # pqrels[str(query_id)][corpus_id] = 1
+                    pqrels.append({
+                        "query-id": query_id,
+                        "corpus-id": corpus_id,
+                        "score": 1,
+                    })
 
         return pqrels
 
@@ -260,10 +265,10 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         judge = ViLARMoRJudge()
         print(f"Generating relevance list for {self.ds.name}")
         # judge the top_m documents for each pseudo query
-        pseudo_qrel_judge = self.pseudo_relevance_judgement(judge, top_m)
+        pseudo_qrels_judge = self.pseudo_relevance_judgement(judge, top_m)
 
-        with open(os.path.join(self.ds.name, "pseudo_qrel_judge.json"), "w") as file:
-            json.dump(pseudo_qrel_judge, file, indent=4)
+        with open(os.path.join(self.ds.name, "pseudo_qrels_judge.json"), "w") as file:
+            json.dump(pseudo_qrels_judge, file, indent=4)
 
     @staticmethod
     def str_keys_qrels(qrels):
@@ -279,16 +284,16 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         """
         print(f"Computing metrics for {self.ds.name}")
 
-        pseudo_qrel_judge = {}
-        with open("pseudo_qrel_judge.json", "r") as file:
-            pseudo_qrel_judge = json.load(file)
+        pseudo_qrels_judge = {}
+        with open("pseudo_qrels_judge.json", "r") as file:
+            pseudo_qrels_judge = json.load(file)
 
         results = {}
         with open("results.json", "r") as file:
             results = json.load(file)
 
         final_metrics = {}
-        p_qrel_judge = self.str_keys_qrels(pseudo_qrel_judge)
+        p_qrel_judge = self.str_keys_qrels(pseudo_qrels_judge)
         final_metrics = {}
 
         for model_name in self.model_conf:

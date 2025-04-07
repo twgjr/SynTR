@@ -10,6 +10,7 @@ class ViLARMoRDataset:
         self,
         name: str,
         load_pseudos: bool,
+        load_judgements: bool,
     ):
         self.name = name
         self.corpus: Dataset = None
@@ -43,7 +44,7 @@ class ViLARMoRDataset:
             self._save_data(qrels_data, os.path.join(self.name, "qrels.json"))
             
         if load_pseudos:
-            self._load_pseudos()
+            self._load_pseudos(load_judgements)
         else:
             self._load_trues()
 
@@ -138,9 +139,12 @@ class ViLARMoRDataset:
 
         return Dataset.from_list(queries), Dataset.from_list(qrels)
 
-    def _load_pseudos(self):
+    def _load_pseudos(self, load_judgements: bool):
         pq_path = os.path.join(self.name, "pseudo_queries.json")
-        pqrel_path = os.path.join(self.name, "pseudo_qrels.json")
+        if load_judgements:
+            pqrel_path = os.path.join(self.name, "pseudo_qrels_judge.json")
+        else:
+            pqrel_path = os.path.join(self.name, "pseudo_qrels.json")
 
         self.queries, self.qrels = self._load_queries_qrels(
             querys_path=pq_path,

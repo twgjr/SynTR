@@ -20,11 +20,11 @@ MODELS = {
 
 # download datasets and generate pseudo queries first
 evaluator = ViLARMoREvaluator(
-    ds_names = DATASETS,
     model_conf = MODELS,
 )
 
 evaluator.run(
+    ds_name=DATASETS[0],
     judge_top_m=100, 
     gen_top_p=0.9,
     gen_temperature=1.0,

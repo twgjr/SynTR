@@ -62,7 +62,8 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         Downloads datasest and generates pseudo queries if needed
         """
         generator = PseudoQueryGenerator(top_p=top_p, temperature=temperature)
-        self.ds = ViLARMoRDataset(name=name,load_pseudos=False)
+        self.ds = ViLARMoRDataset(name=name,load_pseudos=False, 
+                                    load_judgements=False)
         pq_path = os.path.join(name, "pseudo_queries.json")
         pqrel_path = os.path.join(name, "pseudo_qrels.json")
 
@@ -81,7 +82,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                 json.dump(psuedo_qrels, f, indent=4)
 
         # reload the dataset with the generated pseudo queries and qrels
-        self.ds = ViLARMoRDataset(name=name, load_pseudos=True)
+        self.ds = ViLARMoRDataset(name=name, load_pseudos=True, load_judgements = False)
         
 
     def evaluate_dataset(
@@ -245,10 +246,8 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                 corpus_id = int(corpus_id_key)
                 image = self.ds.get_image(corpus_id)
                 query = self.ds.get_query(query_id)
-                judgment = judge.is_relevant(query, image)
-                # qrel only stores relevant query-document pairs
-                if judgment is 1:
-                    # pqrels[str(query_id)][corpus_id] = 1
+
+                if judge.is_relevant(query, image):
                     pqrels.append({
                         "query-id": query_id,
                         "corpus-id": corpus_id,
@@ -310,13 +309,11 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                 json.dump(final_metrics, file, indent=4)
 
 
-    def run(self, judge_top_m, gen_top_p, gen_temperature, gen_num_pqueries, 
+    def run(self, ds_name, judge_top_m, gen_top_p, gen_temperature, gen_num_pqueries, 
             gen_corpus_sample_size):
-        print("Begin ViLARMoR Evaluation")
-        for ds_name in self.ds_names:
-            self.generate_psuedos(ds_name, gen_top_p, gen_temperature, gen_num_pqueries, 
-                            gen_corpus_sample_size)
-            self.rank()
-            self.judge(top_m=judge_top_m)
-            self.evaluate()
-        print("ViLARMoR Evaluation Complete")
+        print(f"Begin ViLARMoR Evaluation of {ds_name}")
+        self.generate_psuedos(ds_name, gen_top_p, gen_temperature, gen_num_pqueries, 
+                        gen_corpus_sample_size)
+        self.rank()
+        self.judge(top_m=judge_top_m)
+        print(f"ViLARMoR Evaluation Complete for {ds_name}")

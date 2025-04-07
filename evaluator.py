@@ -177,7 +177,9 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         """
         results = {}
 
-        query_ids, image_ids = self.ds.get_query_image_ids()
+        query_ids = self.ds.query_ids()
+        image_ids = self.ds.image_ids()
+
         for model_name in self.model_conf:
             results[model_name] = {}
             for query_idx, query_id in enumerate(query_ids):
@@ -204,7 +206,8 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
             # results.json
             self.scores_to_results(scores)
 
-            query_ids, image_ids = self.ds.get_query_image_ids()
+            query_ids = self.ds.query_ids()
+            image_ids = self.ds.image_ids()
 
             print(f"Ranking all models for {self.ds.name}")
             ranking = get_fusion_per_query(

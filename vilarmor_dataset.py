@@ -192,7 +192,7 @@ class ViLARMoRDataset:
 
         return filtered_queries[0]["query"]
 
-    def get_query_image_ids(self):
+    def get_ids_from_qrels(self):
         """
         Get the query and image IDs from the qrels.  If using pseudo queries,
         the image IDs will be a smaller subset of the corpus IDs from the
@@ -205,6 +205,12 @@ class ViLARMoRDataset:
             image_ids.add(qrel["corpus-id"])
         return list(query_ids), list(image_ids)
 
+    def image_ids(self):
+        return list(self.corpus["corpus-id"])
+    
+    def query_ids(self):
+        return list(self.queries["query-id"])
+
 
 if __name__ == "__main__":
     # Test without generator
@@ -216,7 +222,11 @@ if __name__ == "__main__":
     print("Corpus:", dataset.corpus)
     print("Queries:", dataset.queries)
     print("Qrels:", dataset.qrels)
-    print("Image IDs:", dataset.get_query_image_ids())
+    image_ids_from_qrels, query_ids_from_qrels = dataset.get_ids_from_qrels()
+    print("Image IDs from Qrels:", image_ids_from_qrels)
+    print("Query IDs from Qrels:", query_ids_from_qrels)
+    print("Query IDs:", dataset.query_ids())
+    print("Image IDs:", dataset.image_ids())
     image = dataset.get_image(4)
     image.save("test_image_4.png")
     print("Image:", dataset.get_image(4))

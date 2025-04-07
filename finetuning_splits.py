@@ -22,7 +22,7 @@ def generate_beir_samples(
 
     # Instantiate the dataset; here we load true queries (not pseudo) by setting load_pseudos=False.
     # Adjust load_judgements as needed (here we use False for simplicity).
-    dataset = ViLARMoRDataset(name=dataset_name, load_pseudos=False, load_judgements=False)
+    dataset = ViLARMoRDataset(name=dataset_name, load_pseudos=True, load_judgements=True)
 
     # Load queries and qrels (both are lists of dictionaries)
     queries = dataset.queries      # each with keys "query-id" and "query"

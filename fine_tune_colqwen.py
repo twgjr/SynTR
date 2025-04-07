@@ -26,7 +26,7 @@ def dataset_loading_func():
     # Instantiate ViLARMoRDataset to get the corpus images.
     # The dataset name should be the same as used when generating the splits.
     dataset_name = "vidore/docvqa_test_subsampled_beir"
-    vil_dataset = ViLARMoRDataset(name=dataset_name, load_pseudos=False, load_judgements=False)
+    vil_dataset = ViLARMoRDataset(name=dataset_name, load_pseudos=True, load_judgements=True)
     corpus_dataset = vil_dataset.corpus
 
     # Specify the corpus format as used in your CorpusQueryCollator ("vidore" in this example)

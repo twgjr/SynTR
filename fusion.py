@@ -2,21 +2,23 @@ from ranx import Run, fuse
 import numpy as np
 
 
+from ranx import Run
+import numpy as np
+
 def tensor_list_to_ranx_runs(score_matrix_list, query_ids, image_ids):
     runs = []
-    for score_matrix in score_matrix_list:
+    for model_key in score_matrix_list:
+        score_matrix = score_matrix_list[model_key]
         retriever_dict = {}
         for q_idx in range(score_matrix.shape[0]):
             query = str(query_ids[q_idx])
-            # Get document indices sorted by descending score
-            ranked_doc_indices = np.argsort(-score_matrix[q_idx])
-            # Create an ordered list of doc IDs
-            ranked_doc_ids = [str(image_ids[i]) for i in ranked_doc_indices]
-            retriever_dict[query] = ranked_doc_ids
-        # Ranx will automatically assign descending scores internally
-        runs.append(Run(retriever_dict))
+            scores = score_matrix[q_idx].cpu().numpy()
+            ranked_doc_indices = np.argsort(-scores)
+            retriever_dict[query] = {
+                str(image_ids[i]): float(scores[i]) for i in ranked_doc_indices
+            }
+        runs.append(Run(retriever_dict, name=model_key))
     return runs
-
 
 def get_fusion_per_query(score_matrix_list, query_ids, image_ids):
     """

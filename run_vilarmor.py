@@ -25,10 +25,10 @@ evaluator = ViLARMoREvaluator(
 
 evaluator.run(
     ds_name=DATASETS[0],
-    judge_top_m=100, 
+    judge_top_m=5, 
     gen_top_p=0.9,
     gen_temperature=1.0,
-    gen_num_pqueries = 10,
-    gen_corpus_sample_size=100
+    gen_num_pqueries = 2,
+    gen_corpus_sample_size=50
 )
     

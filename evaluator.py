@@ -194,17 +194,46 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
         return results
 
+    def results_to_scores(self, results):
+        """
+        Converts the BeIR qrel format to 2d tensors of query and image scores
+        for each model
+        """
+        scores = {}
+
+        query_ids = self.ds.query_ids()
+        image_ids = self.ds.image_ids()
+        for model_name in self.model_conf:
+            scores[model_name] = torch.zeros(
+                (len(query_ids), len(image_ids)), device=self.device
+            )
+            for query_idx, query_id in enumerate(query_ids):
+                for image_idx, image_id in enumerate(image_ids):
+                    scores[model_name][query_idx][image_idx] = (
+                        results[model_name][str(query_id)][str(image_id)]
+                    )
+            scores[model_name] = scores[model_name].to(self.device)
+            
+        return scores
+
     def rank(self):
         """
         Aggregate document rankings for all models for given dataset.
         """
         ranking_path = os.path.join(self.ds.name, "ranking.json")
         if not os.path.exists(ranking_path):
-            print(f"Scoring all models for {self.ds.name}")
-            scores = self.score()
-            # convert the scores to the BeIR qrel format and save them to 
-            # results.json
-            self.scores_to_results(scores)
+            results_path = os.path.join(self.ds.name, "results.json")
+            if not os.path.exists(results_path):
+                rint(f"Scoring all models for {self.ds.name}")
+                scores = self.score()
+                # convert the scores to the BeIR qrel format and save them to 
+                # results.json
+                self.scores_to_results(scores)
+            else:
+                results = {}
+                with open(results_path, "r") as file:
+                    results = json.load(file)
+                    scores = self.results_to_scores(results)
 
             query_ids = self.ds.query_ids()
             image_ids = self.ds.image_ids()
@@ -264,20 +293,15 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         Judges the relevance of the top_k documents for each pseudo query of 
         each dataset using the VLM model.
         """
-        judge = ViLARMoRJudge()
-        print(f"Generating relevance list for {self.ds.name}")
-        # judge the top_m documents for each pseudo query
-        pseudo_qrels_judge = self.pseudo_relevance_judgement(judge, top_m)
+        pqj_path = os.path.join(self.ds.name, "pseudo_qrels_judge.json")
+        if not os.path.exists(pqj_path):
+            judge = ViLARMoRJudge()
+            print(f"Generating relevance judgements for {self.ds.name}")
+            # judge the top_m documents for each pseudo query
+            pseudo_qrels_judge = self.pseudo_relevance_judgement(judge, top_m)
 
-        with open(os.path.join(self.ds.name, "pseudo_qrels_judge.json"), "w") as file:
-            json.dump(pseudo_qrels_judge, file, indent=4)
-
-    @staticmethod
-    def str_keys_qrels(qrels):
-        return {
-            str(qid): {str(did): rel for did, rel in docs.items()}
-            for qid, docs in qrels.items()
-        }
+            with open(pqj_path, "w") as file:
+                json.dump(pseudo_qrels_judge, file, indent=4)
 
     def evaluate(self) -> dict[str, float]:
         """
@@ -286,30 +310,46 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         """
         print(f"Computing metrics for {self.ds.name}")
 
+        pqj_path = os.path.join(self.ds.name, "pseudo_qrels_judge.json")
         pseudo_qrels_judge = {}
-        with open("pseudo_qrels_judge.json", "r") as file:
+        with open(pqj_path, "r") as file:
             pseudo_qrels_judge = json.load(file)
+        # Convert list to nested dictionary
+        qrels = defaultdict(dict)
+        for item in pseudo_qrels_judge:
+            qid = str(item["query-id"])
+            cid = str(item["corpus-id"])
+            score = item["score"]
+            qrels[qid][cid] = score
 
+        results_path = os.path.join(self.ds.name, "results.json")
         results = {}
-        with open("results.json", "r") as file:
+        with open(results_path, "r") as file:
             results = json.load(file)
 
-        final_metrics = {}
-        p_qrel_judge = self.str_keys_qrels(pseudo_qrels_judge)
+        # Ensure all queries in results have entries in qrels
+        # this may happen if the judge was more strict than the original query
+        # generation
+        for model_name in results:
+            for query_id in results[model_name].keys():
+                if query_id not in qrels:
+                    qrels[query_id] = {}
+
         final_metrics = {}
 
         for model_name in self.model_conf:
             print(f"Computing final metrics for {model_name}")
+            print(f"len(qrels)={len(qrels)}, len(results)={len(results[model_name])}")
             metrics = self.compute_retrieval_scores(
-                qrels=p_qrel_judge,
+                qrels=qrels,
                 results=results[model_name],  # Pass the ranked results
                 ignore_identical_ids=False,
             )
 
             final_metrics[model_name] = metrics
 
-            with open(os.path.join(self.ds.name, "metrics.json"), "w") as file:
-                json.dump(final_metrics, file, indent=4)
+        with open(os.path.join(self.ds.name, "metrics.json"), "w") as file:
+            json.dump(final_metrics, file, indent=4)
 
 
     def run(self, ds_name, judge_top_m, gen_top_p, gen_temperature, gen_num_pqueries, 
@@ -319,4 +359,5 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                         gen_corpus_sample_size)
         self.rank()
         self.judge(top_m=judge_top_m)
+        self.evaluate()
         print(f"ViLARMoR Evaluation Complete for {ds_name}")

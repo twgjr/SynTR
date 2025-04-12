@@ -15,6 +15,7 @@ from vidore_benchmark.evaluation.vidore_evaluators.base_vidore_evaluator import 
     BaseViDoReEvaluator,
 )
 from colpali_engine.utils.processing_utils import BaseVisualRetrieverProcessor
+from vidore_benchmark.retrievers import VisionRetriever
 
 from vilarmor_retriever import ViLARMoRRetriever
 from judge import ViLARMoRJudge
@@ -157,10 +158,20 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         # get the scores for each retriever model for the loaded dataset 
         scores = {}
         for model_name in self.model_conf:
-            model_class, processor_class = self.model_conf[model_name]
-            self.vision_retriever = ViLARMoRRetriever(
-                model_name, model_class, processor_class
-            )
+            model, processor = self.model_conf[model_name]
+
+            if isinstance(model, type) and isinstance(processor, type):
+                # have class types not instances, load from huggingface
+                model_class = model
+                processor_class = processor
+                self.vision_retriever = ViLARMoRRetriever(
+                    model_name, model_class, processor_class
+                )
+            else:
+                # assume have model and processor instances, directly use
+                self.vision_retriever = VisionRetriever(
+                    model=model, processor=processor)
+
 
             score = self.score_single_model_corpus(
                 batch_query=BATCH_SIZE,

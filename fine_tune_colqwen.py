@@ -51,7 +51,6 @@ class ColModelTrainingWithVal(ColModelTraining):
         else:
             print("Training with in-batch negatives")
 
-        # IMPORTANT: use dataset["validation"] for eval_dataset
         trainer = ContrastiveTrainer(
             model=self.model,
             train_dataset=self.dataset["train"],
@@ -78,7 +77,7 @@ def main():
 
     from types import MethodType
 
-##################################################################
+    ##################################################################
     # Monkey-patch inner_forward to safely remove 'labels' if present
     original_inner_forward = model.inner_forward
 
@@ -88,7 +87,7 @@ def main():
         return original_inner_forward(*args, **kwargs)
 
     model.inner_forward = MethodType(safe_inner_forward, model)
-# End monkey patch
+    # End monkey patch
     #################################################################
 
     processor = ColQwen2_5_Processor.from_pretrained(

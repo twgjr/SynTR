@@ -24,6 +24,8 @@ Install Basic Dependencies
 
 Install ColPali Engine:  `pip install git+https://github.com/illuin-tech/colpali`  This includes models such as ColQwen2.5.
 
+`pip install pynvml`  For printing GPU info.
+
 #  Hardware Requirements
 Tested Setup: A single NVIDIA A100 80GB or NVIDIA H100 80GB GPU.
 

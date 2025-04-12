@@ -1,5 +1,5 @@
-import os
 import torch
+import warnings
 from datasets import load_dataset
 from transformers import TrainingArguments
 from colpali_engine.models import ColQwen2_5, ColQwen2_5_Processor
@@ -11,7 +11,11 @@ from colpali_engine.utils.gpu_stats import print_summary
 from peft import LoraConfig
 from transformers import BitsAndBytesConfig
 
-# Import your VilarmorDataset to load the corpus (images)
+try:
+    import pynvml
+except ImportError:
+    warnings.warn("pynvml not found. GPU stats will not be printed.")
+
 from vilarmor_dataset import ViLARMoRDataset
 
 def dataset_loading_func():
@@ -21,7 +25,6 @@ def dataset_loading_func():
     The dataset_splits is a dict with keys "train", "validation", "test" loaded from the JSONL files.
     The corpus_dataset is loaded from ViLARMoRDataset and contains the image data.
     """
-    # Load BEIR splits JSONL files (adjust paths if needed)
     data_files = {
         "train": "beir_splits/train.jsonl",
         "validation": "beir_splits/val.jsonl",
@@ -69,12 +72,13 @@ def main():
     model = ColQwen2_5.from_pretrained(
         "Metric-AI/colqwen2.5-3b-multilingual",
         quantization_config=bnb_config,
-        device_map="auto"
+        device_map="auto",
+        torch_dtype=torch.float16  # ← helps reduce quantization warnings
     )
 
     from types import MethodType
 
-    ##################################################################
+##################################################################
     # Monkey-patch inner_forward to safely remove 'labels' if present
     original_inner_forward = model.inner_forward
 
@@ -84,39 +88,43 @@ def main():
         return original_inner_forward(*args, **kwargs)
 
     model.inner_forward = MethodType(safe_inner_forward, model)
-    # End monkey patch
+# End monkey patch
     #################################################################
-    
-    processor = ColQwen2_5_Processor.from_pretrained("Metric-AI/colqwen2.5-3b-multilingual")
 
-    # Define training arguments using transformers.TrainingArguments
+    processor = ColQwen2_5_Processor.from_pretrained(
+        "Metric-AI/colqwen2.5-3b-multilingual",
+        use_fast=False  # ← suppress tokenizer warning
+    )
+
+    model.config.use_cache = False
+    model.gradient_checkpointing_enable()
+
     training_args = TrainingArguments(
         output_dir="./colqwen_beir_checkpoints",
-        per_device_train_batch_size=4,
-        gradient_accumulation_steps=2,
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=1,
+        gradient_accumulation_steps=8,
         learning_rate=2e-4,
         num_train_epochs=3,
         bf16=True,
         save_steps=500,
         logging_steps=100,
         optim="paged_adamw_8bit",
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",  # ← replaces deprecated 'evaluation_strategy'
+        eval_accumulation_steps=1,
     )
 
     loss_func = ColbertPairwiseNegativeCELoss()
 
-
     peft_config = LoraConfig(
-        r=32,  # Reduced from 128
-        lora_alpha=32,  # Reduced proportionally
-        target_modules=["q_proj", "v_proj"],  # Focusing on attention modules
+        r=32,
+        lora_alpha=32,
+        target_modules=["q_proj", "v_proj"],
         lora_dropout=0.1,
         bias="none",
-        task_type="CAUSAL_LM",  # Adjust based on your specific task
+        task_type="CAUSAL_LM",
     )
 
-    # Create a training configuration using ColModelTrainingConfig.
-    # This config uses the dataset_loading_func to load the BEIR splits and corpus images.
     config = ColModelTrainingConfig(
         model=model,
         processor=processor,
@@ -128,13 +136,8 @@ def main():
         peft_config=peft_config,
     )
 
-
-    # Initialize the training application and train the model.
     training_app = ColModelTrainingWithVal(config)
     training_app.train()
-
-    # Save the finetuned model and training configuration.
-    training_app.save("finetune_beir_colqwen_config.yml")
 
 if __name__ == "__main__":
     main()

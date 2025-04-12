@@ -224,7 +224,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         if not os.path.exists(ranking_path):
             results_path = os.path.join(self.ds.name, "results.json")
             if not os.path.exists(results_path):
-                rint(f"Scoring all models for {self.ds.name}")
+                print(f"Scoring all models for {self.ds.name}")
                 scores = self.score()
                 # convert the scores to the BeIR qrel format and save them to 
                 # results.json

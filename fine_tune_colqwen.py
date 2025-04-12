@@ -5,6 +5,9 @@ from transformers import TrainingArguments
 from colpali_engine.models import ColQwen2_5, ColQwen2_5_Processor
 from colpali_engine.trainer.colmodel_training import ColModelTraining, ColModelTrainingConfig
 from colpali_engine.loss.late_interaction_losses import ColbertPairwiseNegativeCELoss
+from colpali_engine.trainer.contrastive_trainer import ContrastiveTrainer
+from colpali_engine.collators import CorpusQueryCollator
+from colpali_engine.utils.gpu_stats import print_summary
 from peft import LoraConfig
 from transformers import BitsAndBytesConfig
 
@@ -37,6 +40,28 @@ def dataset_loading_func():
 
     # Return a tuple: (BEIR dataset splits, corpus dataset, corpus_format)
     return (beir_dataset, corpus_dataset, corpus_format)
+
+class ColModelTrainingWithVal(ColModelTraining):
+    def train(self) -> None:
+        if isinstance(self.collator, CorpusQueryCollator) and self.collator.mined_negatives:
+            print("Training with hard negatives")
+        else:
+            print("Training with in-batch negatives")
+
+        # IMPORTANT: use dataset["validation"] for eval_dataset
+        trainer = ContrastiveTrainer(
+            model=self.model,
+            train_dataset=self.dataset["train"],
+            eval_dataset=self.dataset["validation"],
+            args=self.config.tr_args,
+            data_collator=self.collator,
+            loss_func=self.config.loss_func,
+            is_vision_model=self.config.processor is not None,
+        )
+
+        trainer.args.remove_unused_columns = False
+        result = trainer.train(resume_from_checkpoint=self.config.tr_args.resume_from_checkpoint)
+        print_summary(result)
 
 def main():
     bnb_config = BitsAndBytesConfig(load_in_8bit=True)
@@ -105,7 +130,7 @@ def main():
 
 
     # Initialize the training application and train the model.
-    training_app = ColModelTraining(config)
+    training_app = ColModelTrainingWithVal(config)
     training_app.train()
 
     # Save the finetuned model and training configuration.

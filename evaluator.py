@@ -372,3 +372,10 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         self.judge(top_m=judge_top_m)
         self.evaluate()
         print(f"ViLARMoR Evaluation Complete for {ds_name}")
+
+    def run_true(self, ds_name):
+        print(f"Begin ViLARMoR Evaluation of {ds_name}")
+        self.ds = ViLARMoRDataset(name=ds_name, load_pseudos=False, load_judgements = None)
+        self.rank()
+        self.evaluate()
+        print(f"ViLARMoR Evaluation Complete for {ds_name}")

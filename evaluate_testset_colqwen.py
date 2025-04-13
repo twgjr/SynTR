@@ -62,14 +62,7 @@ def main():
     )
 
     print("Running Vilarmor Evaluator using existing generated queries and qrels")
-    evaluator.run(
-        ds_name=DATASETS[0],
-        judge_top_m=5,
-        gen_top_p=0.9,
-        gen_temperature=1.0,
-        gen_num_pqueries = 2,
-        gen_corpus_sample_size=50
-    )
+    evaluator.run_true(ds_name=DATASETS[0])
     print("Done computing retrieval metrics with ViLARMoREvaluator!")
 
 if __name__ == "__main__":

@@ -1,3 +1,5 @@
 __pycache__/
 metrics/
 vidore/
+colqwen_beir_checkpoints/
+beir_splits/

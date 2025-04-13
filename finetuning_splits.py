@@ -74,24 +74,17 @@ def generate_beir_samples(
 def split_and_save_samples(
     samples: list,
     output_dir: str,
-    test_size: float = 0.2,
     val_size: float = 0.1,
     seed: int = 42,
 ):
-    """
-    Shuffle samples and split into train, validation, and test sets,
-    then save each as a JSONL file in the given output directory.
-    """
     random.seed(seed)
     random.shuffle(samples)
     total = len(samples)
-    test_count = int(total * test_size)
     val_count = int(total * val_size)
-    train_count = total - test_count - val_count
+    train_count = total - val_count
 
     train_samples = samples[:train_count]
     val_samples = samples[train_count:train_count + val_count]
-    test_samples = samples[train_count + val_count:]
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -102,13 +95,11 @@ def split_and_save_samples(
 
     train_file = os.path.join(output_dir, "train.jsonl")
     val_file = os.path.join(output_dir, "val.jsonl")
-    test_file = os.path.join(output_dir, "test.jsonl")
 
     write_jsonl(train_file, train_samples)
     write_jsonl(val_file, val_samples)
-    write_jsonl(test_file, test_samples)
 
-    print(f"Generated {len(train_samples)} train samples, {len(val_samples)} validation samples, and {len(test_samples)} test samples.")
+    print(f"Generated {len(train_samples)} train samples, {len(val_samples)} validation samples.")
     print(f"Files saved in directory: {output_dir}")
 
 if __name__ == "__main__":
@@ -118,6 +109,6 @@ if __name__ == "__main__":
     # Generate BEIR-style samples using your VilarmorDataset.
     samples = generate_beir_samples(dataset_name=dataset_name, negatives_per_query=3, seed=42)
 
-    # Split the samples into train, validation, and test sets and save them.
+    # Split the samples into train, validation sets and save them.
     output_directory = "beir_splits"
-    split_and_save_samples(samples, output_dir=output_directory, test_size=0.2, val_size=0.1, seed=42)
+    split_and_save_samples(samples, output_dir=output_directory, val_size=0.1, seed=42)

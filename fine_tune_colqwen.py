@@ -19,16 +19,9 @@ except ImportError:
 from vilarmor_dataset import ViLARMoRDataset
 
 def dataset_loading_func():
-    """
-    Loads the BEIR-style splits and returns a tuple:
-      (dataset_splits, corpus_dataset, corpus_format)
-    The dataset_splits is a dict with keys "train", "validation", "test" loaded from the JSONL files.
-    The corpus_dataset is loaded from ViLARMoRDataset and contains the image data.
-    """
     data_files = {
         "train": "beir_splits/train.jsonl",
         "validation": "beir_splits/val.jsonl",
-        "test": "beir_splits/test.jsonl"
     }
     beir_dataset = load_dataset("json", data_files=data_files)
 
@@ -104,13 +97,14 @@ def main():
         per_device_eval_batch_size=1,
         gradient_accumulation_steps=8,
         learning_rate=2e-4,
-        num_train_epochs=3,
+        num_train_epochs=9,
         bf16=True,
         save_steps=500,
         logging_steps=100,
         optim="paged_adamw_8bit",
         eval_strategy="epoch",  # ← replaces deprecated 'evaluation_strategy'
         eval_accumulation_steps=1,
+        resume_from_checkpoint="./colqwen_beir_checkpoints/checkpoint-epoch6-loss2e-7",
     )
 
     loss_func = ColbertPairwiseNegativeCELoss()

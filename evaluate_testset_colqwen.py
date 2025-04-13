@@ -21,7 +21,7 @@ def main():
     )
 
     # Load adapter weights
-    model = PeftModel.from_pretrained(base_model, "./colqwen_beir_checkpoints/checkpoint-21")
+    model = PeftModel.from_pretrained(base_model, "./colqwen_beir_checkpoints/checkpoint-54-epoch-6-loss-2e-7")
 
     from types import MethodType
 

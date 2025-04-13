@@ -314,20 +314,16 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
             with open(pqj_path, "w") as file:
                 json.dump(pseudo_qrels_judge, file, indent=4)
 
-    def evaluate(self) -> dict[str, float]:
+    def evaluate(self, ) -> dict[str, float]:
         """
-        Compute the final ranking of NDGC@10 using the pseudo relevance lists and the ranked
+        Compute the final ranking of NDGC@10 using the qrels and the ranked
         output from the retrievers.
         """
         print(f"Computing metrics for {self.ds.name}")
 
-        pqj_path = os.path.join(self.ds.name, "pseudo_qrels_judge.json")
-        pseudo_qrels_judge = {}
-        with open(pqj_path, "r") as file:
-            pseudo_qrels_judge = json.load(file)
         # Convert list to nested dictionary
         qrels = defaultdict(dict)
-        for item in pseudo_qrels_judge:
+        for item in self.ds.qrels:
             qid = str(item["query-id"])
             cid = str(item["corpus-id"])
             score = item["score"]

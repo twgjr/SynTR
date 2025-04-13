@@ -216,18 +216,16 @@ if __name__ == "__main__":
     # Test without generator
     dataset = ViLARMoRDataset(
         name="vidore/docvqa_test_subsampled_beir",
-        generator=None,
         load_pseudos=False,
+        load_judgements=None,
     )
-    print("Corpus:", dataset.corpus)
-    print("Queries:", dataset.queries)
-    print("Qrels:", dataset.qrels)
-    image_ids_from_qrels, query_ids_from_qrels = dataset.get_ids_from_qrels()
-    print("Image IDs from Qrels:", image_ids_from_qrels)
-    print("Query IDs from Qrels:", query_ids_from_qrels)
-    print("Query IDs:", dataset.query_ids())
-    print("Image IDs:", dataset.image_ids())
-    image = dataset.get_image(4)
-    image.save("test_image_4.png")
-    print("Image:", dataset.get_image(4))
-    print("Query:", dataset.get_query(1))
+    print("Loading trues")
+    print("Corpus len:", len(dataset.corpus))
+    print("Corpus first image size:", dataset.corpus[0]["image"].size)
+    print("Corpus first image id:", dataset.corpus[0]["corpus-id"])
+    print("Queries len:", len(dataset.queries))
+    print("Queries first query:", dataset.queries[0]["query"])
+    print("Queries first query id:", dataset.queries[0]["query-id"])
+    print("Qrels len:", len(dataset.qrels))
+    print("Qrels first query id:", dataset.qrels[0]["query-id"])
+    print("Qrels first corpus id:", dataset.qrels[0]["corpus-id"])

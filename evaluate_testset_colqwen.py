@@ -50,9 +50,9 @@ def main():
 
     MODELS = {
         "colqwen_finetuned": [model, processor], # contains instances
-        "Metric-AI/ColQwen2.5-3b-multilingual-v1.0": [ColQwen2_5, ColQwen2_5_Processor],
-        "Metric-AI/colqwen2.5-3b-multilingual": [ColQwen2_5, ColQwen2_5_Processor],
-        "vidore/colqwen2.5-v0.2": [ColQwen2_5, ColQwen2_5_Processor],
+        # "Metric-AI/ColQwen2.5-3b-multilingual-v1.0": [ColQwen2_5, ColQwen2_5_Processor],
+        # "Metric-AI/colqwen2.5-3b-multilingual": [ColQwen2_5, ColQwen2_5_Processor],
+        # "vidore/colqwen2.5-v0.2": [ColQwen2_5, ColQwen2_5_Processor],
     }
 
 

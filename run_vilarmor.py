@@ -23,12 +23,20 @@ evaluator = ViLARMoREvaluator(
     model_conf = MODELS,
 )
 
-evaluator.run(
+# evaluator.run(
+#     ds_name=DATASETS[0],
+#     judge_top_m=5, 
+#     gen_top_p=0.9,
+#     gen_temperature=1.0,
+#     gen_num_pqueries = 2,
+#     gen_corpus_sample_size=50
+# )
+
+evaluator.run_generate_not_judge(
     ds_name=DATASETS[0],
-    judge_top_m=5, 
     gen_top_p=0.9,
     gen_temperature=1.0,
-    gen_num_pqueries = 2,
-    gen_corpus_sample_size=50
+    gen_num_pqueries = 3,
+    gen_corpus_sample_size=400,
 )
     

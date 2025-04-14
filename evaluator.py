@@ -314,7 +314,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
             with open(pqj_path, "w") as file:
                 json.dump(pseudo_qrels_judge, file, indent=4)
 
-    def evaluate(self, ) -> dict[str, float]:
+    def evaluate(self) -> dict[str, float]:
         """
         Compute the final ranking of NDGC@10 using the qrels and the ranked
         output from the retrievers.
@@ -375,3 +375,13 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         self.rank()
         self.evaluate()
         print(f"ViLARMoR Evaluation Complete for {ds_name}")
+
+    def run_generate_not_judge(self, ds_name, gen_top_p, gen_temperature, gen_num_pqueries, 
+            gen_corpus_sample_size):
+        print(f"Begin ViLARMoR Evaluation of {ds_name}")
+        self.generate_psuedos(ds_name, gen_top_p, gen_temperature, gen_num_pqueries, 
+                        gen_corpus_sample_size)
+        self.rank()
+        self.evaluate()
+        print(f"ViLARMoR Evaluation Complete for {ds_name}")
+        

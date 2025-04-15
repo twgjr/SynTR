@@ -1,5 +1,9 @@
+import json
+import os
+import shutil
 import torch
 import warnings
+from types import MethodType
 from datasets import load_dataset
 from transformers import TrainingArguments
 from colpali_engine.models import ColQwen2_5, ColQwen2_5_Processor
@@ -9,7 +13,7 @@ from colpali_engine.trainer.contrastive_trainer import ContrastiveTrainer
 from colpali_engine.collators import CorpusQueryCollator
 from colpali_engine.utils.gpu_stats import print_summary
 from peft import LoraConfig
-from transformers import BitsAndBytesConfig
+from transformers import BitsAndBytesConfig, EarlyStoppingCallback
 
 try:
     import pynvml
@@ -17,6 +21,7 @@ except ImportError:
     warnings.warn("pynvml not found. GPU stats will not be printed.")
 
 from vilarmor_dataset import ViLARMoRDataset
+from evaluator import compute_metrics
 
 def dataset_loading_func():
     data_files = {
@@ -28,7 +33,7 @@ def dataset_loading_func():
     # Instantiate ViLARMoRDataset to get the corpus images.
     # The dataset name should be the same as used when generating the splits.
     dataset_name = "vidore/docvqa_test_subsampled_beir"
-    vil_dataset = ViLARMoRDataset(name=dataset_name, load_pseudos=True, load_judgements=True)
+    vil_dataset = ViLARMoRDataset(name=dataset_name, load_pseudos=True, load_judgements=False)
     corpus_dataset = vil_dataset.corpus
 
     # Specify the corpus format as used in your CorpusQueryCollator ("vidore" in this example)
@@ -38,12 +43,18 @@ def dataset_loading_func():
     return (beir_dataset, corpus_dataset, corpus_format)
 
 class ColModelTrainingWithVal(ColModelTraining):
-    def train(self) -> None:
-        if isinstance(self.collator, CorpusQueryCollator) and self.collator.mined_negatives:
-            print("Training with hard negatives")
-        else:
-            print("Training with in-batch negatives")
+    def __init__(self, config, num_epochs):
+        super().__init__(config)
+        self.num_epochs = num_epochs
 
+    def get_current_checkpoint_path(output_dir: str):
+        for name in os.listdir(output_dir):
+            if name.startswith("checkpoint-"):
+                path = os.path.join(output_dir, name)
+                return path
+        return None
+
+    def train(self) -> None:
         trainer = ContrastiveTrainer(
             model=self.model,
             train_dataset=self.dataset["train"],
@@ -55,23 +66,68 @@ class ColModelTrainingWithVal(ColModelTraining):
         )
 
         trainer.args.remove_unused_columns = False
-        result = trainer.train(resume_from_checkpoint=self.config.tr_args.resume_from_checkpoint)
-        print_summary(result)
 
-def main():
+        best_score = None
+        patience = 2
+        patience_counter = 0
+        metric_key = "ndcg_at_10"
+
+        prev_checkpoint_path=None
+        for epoch in range(int(self.num_epochs)):
+            print(f"\nStarting epoch {epoch + 1}")
+
+            if prev_checkpoint_path is not None:
+                print(f"Removing {prev_checkpoint_path}")
+                shutil.rmtree(prev_checkpoint_path)
+
+            trainer.train()
+
+            print(f"Saving model to {self.config.tr_args.output_dir}")
+            trainer.save_model(self.config.tr_args.output_dir)
+
+            checkpoint_path = self.get_current_checkpoint_path(self.config.tr_args.output_dir)
+            prev_checkpoint_path = checkpoint_path
+
+            if checkpoint_path is None:
+                print("No checkpoint folder found after saving. Skipping evaluation.")
+                break
+
+            print(f"Evaluating checkpoint at: {checkpoint_path}")
+            metrics = compute_metrics(checkpoint_path=checkpoint_path, split_name="validation")
+
+            current_score = metrics[metric_key]
+            print(f"Current Score: {current_score}")
+
+            if current_score is None:
+                print(f"Metric '{metric_key}' not found in results.")
+                break
+
+            if best_score is None or current_score > best_score:
+                best_score = current_score
+                patience_counter = 0
+                print(f"New best score {best_score:.4f}, saving as 'best'")
+                trainer.save_model(f"{self.config.tr_args.output_dir}/best")
+            else:
+                patience_counter += 1
+                print(f"No improvement. Patience: {patience_counter}/{patience}")
+
+            if patience_counter >= patience:
+                print("Early stopping triggered.")
+                break
+
+def config_model_training(best_checkpoint_dir:str=None):
     bnb_config = BitsAndBytesConfig(load_in_8bit=True)
 
     model = ColQwen2_5.from_pretrained(
         "Metric-AI/colqwen2.5-3b-multilingual",
         quantization_config=bnb_config,
         device_map="auto",
-        torch_dtype=torch.float16  # ← helps reduce quantization warnings
+        torch_dtype=torch.float16  
     )
-
-    from types import MethodType
 
     ##################################################################
     # Monkey-patch inner_forward to safely remove 'labels' if present
+    from types import MethodType
     original_inner_forward = model.inner_forward
 
     def safe_inner_forward(self, *args, **kwargs):
@@ -85,26 +141,21 @@ def main():
 
     processor = ColQwen2_5_Processor.from_pretrained(
         "Metric-AI/colqwen2.5-3b-multilingual",
-        use_fast=False  # ← suppress tokenizer warning
+        use_fast=False  
     )
 
     model.config.use_cache = False
     model.gradient_checkpointing_enable()
 
     training_args = TrainingArguments(
-        output_dir="./colqwen_beir_checkpoints",
-        per_device_train_batch_size=1,
-        per_device_eval_batch_size=1,
-        gradient_accumulation_steps=8,
+        per_device_train_batch_size=4,
+        per_device_eval_batch_size=4,
+        gradient_accumulation_steps=2,
         learning_rate=2e-4,
-        num_train_epochs=9,
+        num_train_epochs=1,
         bf16=True,
-        save_steps=500,
-        logging_steps=100,
         optim="paged_adamw_8bit",
-        eval_strategy="epoch",  # ← replaces deprecated 'evaluation_strategy'
-        eval_accumulation_steps=1,
-        resume_from_checkpoint="./colqwen_beir_checkpoints/checkpoint-epoch6-loss2e-7",
+        resume_from_checkpoint=best_checkpoint_dir,
     )
 
     loss_func = ColbertPairwiseNegativeCELoss()
@@ -112,8 +163,8 @@ def main():
     peft_config = LoraConfig(
         r=32,
         lora_alpha=32,
-        target_modules=["q_proj", "v_proj"],
         lora_dropout=0.1,
+        target_modules=["q_proj", "v_proj"],
         bias="none",
         task_type="CAUSAL_LM",
     )
@@ -128,9 +179,16 @@ def main():
         loss_func=loss_func,
         peft_config=peft_config,
     )
+    return config
 
-    training_app = ColModelTrainingWithVal(config)
-    training_app.train()
+def main():
+    checkpoint_dir="colqwen_beir_checkpoints/best"
+    # config = config_model_training(checkpoint_dir)
+    # training_app = ColModelTrainingWithVal(config, num_epochs=5)
+    # training_app.train()
+
+    # evaluate on test set
+    compute_metrics(checkpoint_dir, split_name="test")
 
 if __name__ == "__main__":
     main()

@@ -22,7 +22,7 @@ def generate_beir_samples(
 
     # Instantiate the dataset; here we load true queries (not pseudo) by setting load_pseudos=False.
     # Adjust load_judgements as needed (here we use False for simplicity).
-    dataset = ViLARMoRDataset(name=dataset_name, load_pseudos=True, load_judgements=True)
+    dataset = ViLARMoRDataset(name=dataset_name, load_pseudos=True, load_judgements=False)
 
     # Load queries and qrels (both are lists of dictionaries)
     queries = dataset.queries      # each with keys "query-id" and "query"
@@ -64,6 +64,7 @@ def generate_beir_samples(
 
         sample = {
             "query": query_text,
+            "query-id": qid,
             "positive_passages": [positive],
             "negative_passages": negatives,
         }
@@ -75,16 +76,20 @@ def split_and_save_samples(
     samples: list,
     output_dir: str,
     val_size: float = 0.1,
+    test_size: float = 0.1,
     seed: int = 42,
 ):
     random.seed(seed)
     random.shuffle(samples)
     total = len(samples)
+
+    test_count = int(total * test_size)
     val_count = int(total * val_size)
-    train_count = total - val_count
+    train_count = total - val_count - test_count
 
     train_samples = samples[:train_count]
     val_samples = samples[train_count:train_count + val_count]
+    test_samples = samples[train_count + val_count:]
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -93,13 +98,11 @@ def split_and_save_samples(
             for entry in data:
                 f.write(json.dumps(entry) + "\n")
 
-    train_file = os.path.join(output_dir, "train.jsonl")
-    val_file = os.path.join(output_dir, "val.jsonl")
+    write_jsonl(os.path.join(output_dir, "train.jsonl"), train_samples)
+    write_jsonl(os.path.join(output_dir, "val.jsonl"), val_samples)
+    write_jsonl(os.path.join(output_dir, "test.jsonl"), test_samples)
 
-    write_jsonl(train_file, train_samples)
-    write_jsonl(val_file, val_samples)
-
-    print(f"Generated {len(train_samples)} train samples, {len(val_samples)} validation samples.")
+    print(f"Generated {len(train_samples)} train, {len(val_samples)} val, {len(test_samples)} test samples.")
     print(f"Files saved in directory: {output_dir}")
 
 if __name__ == "__main__":

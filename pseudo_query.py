@@ -47,6 +47,6 @@ class PseudoQueryGenerator(BaseVLM):
                 messages = [self.message_template(prompt, image)]
                 pseudo_query = self.response(messages, self.top_p, self.temperature)
                 psuedo_queries.append({"query-id": qid, "query": pseudo_query})
-                psuedo_qrels.append({"query-id": qid, "corpus-id": corpus_id, "relevance": 1})
+                psuedo_qrels.append({"query-id": qid, "corpus-id": corpus_id, "score": 1})
 
         return psuedo_queries, psuedo_qrels

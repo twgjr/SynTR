@@ -249,13 +249,14 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
             query_ids = self.ds.query_ids()
             image_ids = self.ds.image_ids()
 
-            print(f"Ranking all models for {self.ds.name}")
-            ranking = get_fusion_per_query(
-                scores, query_ids, image_ids
-            )
+            if (len(scores)>1):
+                print(f"Ranking all models for {self.ds.name}")
+                ranking = get_fusion_per_query(
+                    scores, query_ids, image_ids
+                )
 
-            with open(ranking_path, "w") as file:
-                json.dump(ranking, file, indent=4)
+                with open(ranking_path, "w") as file:
+                    json.dump(ranking, file, indent=4)
 
     def pseudo_relevance_judgement(
         self, judge: ViLARMoRJudge, top_m: int
@@ -384,4 +385,130 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         self.rank()
         self.evaluate()
         print(f"ViLARMoR Evaluation Complete for {ds_name}")
-        
+
+    def filter_from_split(self, dataset_split):
+        """
+        Filters the HuggingFace Datasets based on a dataset split containing query IDs
+        and their positive/negative image IDs. Updates self.ds.corpus, self.ds.queries,
+        and self.ds.qrels with the filtered versions.
+        """
+        print("Filtering dataset with the provided split.")
+        filtered_corpus_ids = set()
+        filtered_query_ids = set()
+        filtered_qrels_set = set()
+
+        for sample in dataset_split:
+            query_id = sample['query-id']
+            filtered_query_ids.add(query_id)
+
+            for image_id in sample['positive_passages']:
+                filtered_corpus_ids.add(image_id)
+                filtered_qrels_set.add((query_id, image_id, 1))
+
+            for image_id in sample['negative_passages']:
+                filtered_corpus_ids.add(image_id)
+                filtered_qrels_set.add((query_id, image_id, 0))
+
+        filtered_qrels = [
+            {"query-id": qid, "corpus-id": cid, "score": score}
+            for (qid, cid, score) in filtered_qrels_set
+        ]
+
+        # Apply filtering using HuggingFace Dataset filter method
+        self.ds.corpus = self.ds.corpus.filter(lambda example: example["corpus-id"] in filtered_corpus_ids)
+        self.ds.queries = self.ds.queries.filter(lambda example: example["query-id"] in filtered_query_ids)
+        self.ds.qrels = self.ds.qrels.select([i for i, ex in enumerate(self.ds.qrels) 
+                                            if (ex["query-id"], ex["corpus-id"], ex["score"]) in filtered_qrels_set])
+
+# static non-class function
+def compute_metrics(checkpoint_path: str, split_name: str = "validation"):
+    from colpali_engine.models import ColQwen2_5, ColQwen2_5_Processor
+    from peft import PeftModel, PeftConfig
+    from types import MethodType
+    from datasets import load_dataset
+    
+    assert split_name in {"validation", "test"}, f"Unsupported split_name: {split_name}"
+    assert os.path.isdir(checkpoint_path), f"Checkpoint path does not exist: {checkpoint_path}"
+
+    print(f"Loading checkpoint from: {checkpoint_path}")
+
+    # Load base model
+    base_model = ColQwen2_5.from_pretrained(
+        "Metric-AI/colqwen2.5-3b-multilingual",
+        device_map="auto",
+        torch_dtype=torch.float16
+    )
+
+    base_model.config.use_cache = False
+    base_model.gradient_checkpointing_enable()
+
+    # Wrap it with the LoRA adapter
+    model = PeftModel.from_pretrained(base_model, checkpoint_path)
+
+    # Patch the actual inner model's inner_forward
+    original_inner_forward = model.base_model.model.inner_forward
+
+    def safe_inner_forward(self, *args, **kwargs):
+        if "labels" in kwargs:
+            kwargs.pop("labels")
+        return original_inner_forward(*args, **kwargs)
+
+    model.base_model.model.inner_forward = MethodType(safe_inner_forward, model.base_model.model)
+    ### end patch
+
+    # Load processor
+    processor = ColQwen2_5_Processor.from_pretrained(
+        "Metric-AI/colqwen2.5-3b-multilingual",
+        use_fast=False
+    )
+
+    # Load the split (val/test)
+    split_file = f"./beir_splits/{'val' if split_name == 'validation' else 'test'}.jsonl"
+    dataset_split = load_dataset("json", data_files={split_name: split_file})[split_name]
+
+    # Init evaluator and dataset
+    evaluator = ViLARMoREvaluator(model_conf={"colqwen_finetuned": [model, processor]})
+    evaluator.ds = ViLARMoRDataset(name="vidore/docvqa_test_subsampled_beir", load_pseudos=True, load_judgements=False)
+
+    # Filter for relevant subset of data
+    evaluator.filter_from_split(dataset_split)
+
+    # Run evaluation
+    evaluator.rank()
+    evaluator.evaluate()
+
+    metrics_path = os.path.join("vidore/docvqa_test_subsampled_beir", "metrics.json")
+    with open(metrics_path) as f:
+        metrics = json.load(f)
+
+    return metrics["colqwen_finetuned"]
+    
+if __name__ == "__main__":
+    # test filtering the dataset
+    import json
+    from vilarmor_dataset import ViLARMoRDataset
+
+    # Load top 3 entries from the JSONL split
+    split_path = "beir_splits/val.jsonl"
+    with open(split_path, "r") as f:
+        dataset_split = [json.loads(line) for _, line in zip(range(3), f)]
+
+    # Replace with actual model + processor if available
+    dummy_model_conf = {
+        "dummy-model": (None, None)
+    }
+
+    # Create evaluator instance
+    evaluator = ViLARMoREvaluator(model_conf=dummy_model_conf)
+
+    # Load full dataset
+    dataset_name = "vidore/docvqa_test_subsampled_beir"
+    evaluator.ds = ViLARMoRDataset(name=dataset_name, load_pseudos=True, load_judgements=False)
+
+    # Filter using the top 3 split examples
+    evaluator.filter_from_split(dataset_split)
+
+    # Print a quick summary to validate
+    print("Filtered queries:", evaluator.ds.queries)
+    print("Filtered corpus:", evaluator.ds.corpus)
+    print("Filtered qrels:", evaluator.ds.qrels)

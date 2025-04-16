@@ -68,7 +68,7 @@ class ColModelTrainingWithVal(ColModelTraining):
         trainer.args.remove_unused_columns = False
 
         best_score = None
-        patience = 2
+        patience = 3
         patience_counter = 0
         metric_key = "ndcg_at_10"
 
@@ -93,7 +93,11 @@ class ColModelTrainingWithVal(ColModelTraining):
                 break
 
             print(f"Evaluating checkpoint at: {checkpoint_path}")
-            metrics = compute_metrics(checkpoint_path=checkpoint_path, split_name="validation")
+            metrics = compute_metrics(
+                checkpoint_path=checkpoint_path,
+                split_name="validation",
+                base_model="Metric-AI/colqwen2.5-3b-multilingual"
+            )
 
             current_score = metrics[metric_key]
             print(f"Current Score: {current_score}")
@@ -116,11 +120,11 @@ class ColModelTrainingWithVal(ColModelTraining):
                 break
 
 def config_model_training(best_checkpoint_dir:str=None):
-    bnb_config = BitsAndBytesConfig(load_in_8bit=True)
+    # bnb_config = BitsAndBytesConfig(load_in_8bit=True)
 
     model = ColQwen2_5.from_pretrained(
         "Metric-AI/colqwen2.5-3b-multilingual",
-        quantization_config=bnb_config,
+        # quantization_config=bnb_config,
         device_map="auto",
         torch_dtype=torch.float16  
     )
@@ -148,9 +152,9 @@ def config_model_training(best_checkpoint_dir:str=None):
     model.gradient_checkpointing_enable()
 
     training_args = TrainingArguments(
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=4,
-        gradient_accumulation_steps=2,
+        per_device_train_batch_size=2,
+        per_device_eval_batch_size=2,
+        gradient_accumulation_steps=4,
         learning_rate=2e-4,
         num_train_epochs=1,
         bf16=True,
@@ -183,12 +187,9 @@ def config_model_training(best_checkpoint_dir:str=None):
 
 def main():
     checkpoint_dir="colqwen_beir_checkpoints/best"
-    # config = config_model_training(checkpoint_dir)
-    # training_app = ColModelTrainingWithVal(config, num_epochs=5)
-    # training_app.train()
-
-    # evaluate on test set
-    compute_metrics(checkpoint_dir, split_name="test")
+    config = config_model_training(checkpoint_dir)
+    training_app = ColModelTrainingWithVal(config, num_epochs=10)
+    training_app.train()
 
 if __name__ == "__main__":
     main()

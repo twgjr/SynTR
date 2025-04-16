@@ -24,15 +24,14 @@ class PseudoQueryGenerator(BaseVLM):
         corpus: Dataset,
         corpus_sample_size:int,
         num_pqueries:int,
+        prompt:str="Generate a question that the following image can answer. \
+            Avoid generating general questions."
     ):
         """
         Generate pseudo queries and qrel from corpus.
         """
         psuedo_queries = []  # ('query-id', 'query')
         psuedo_qrels = []  # ('query-id', 'corpus-id', 'relevance')
-
-        prompt = "Generate a question that the following image can answer. \
-            Avoid generating general questions."
 
         sampled_images = random.sample(range(len(corpus)), k=corpus_sample_size)
 

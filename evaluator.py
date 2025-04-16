@@ -112,15 +112,6 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         dataloader_prebatch_query: int | None = None,
         dataloader_prebatch_image: int | None = None,
     ) -> torch.Tensor:
-        """
-        Get ranked list of relevant documents using psuedo queries.
-
-        This creates a reduced set of ranked documents for each dataset
-        representing the most relevant documents for the given pseudo queries,
-        retriever model and dataset.
-
-        Returns a 2D torch tensor of shape (queries, images).
-        """
         # Load datasets
         ds_corpus = self.ds.corpus
         ds_queries = self.ds.queries
@@ -141,6 +132,12 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
             batch_passage=batch_image,
             dataloader_prebatch_size=dataloader_prebatch_image,
         )
+        for idx, emb in enumerate(image_embeddings):
+            if torch.isnan(emb).any():
+                image_id = self.ds.image_ids()[idx]
+                print(f"Image embedding for ID {image_id} is NaN. Replacing with zeros.")
+                embedding_shape = emb.shape
+                image_embeddings[idx] = torch.zeros_like(emb)
 
         norm_image_embeddings = self.l2_normalize_list(image_embeddings)
 
@@ -200,8 +197,6 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                         scores[model_name][query_idx][img_idx].item()
                     )
 
-            with open(os.path.join(self.ds.name, "results.json"), "w") as file:
-                json.dump(results, file, indent=4)
 
         return results
 
@@ -210,8 +205,8 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         Aggregate document rankings for all models for given dataset.
         """
         scores = self.score()
-        # convert the scores to the BeIR qrel format and save them to 
-        # results.json
+
+        # convert the scores to the BeIR qrel format 
         results = self.scores_to_results(scores)
 
         query_ids = self.ds.query_ids()
@@ -317,6 +312,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         for model_name in self.model_conf:
             print(f"Computing metrics for {model_name}")
             print(f"len(qrels)={len(qrels)}, len(results)={len(results[model_name])}")
+
             metrics = self.compute_retrieval_scores(
                 qrels=qrels,
                 results=results[model_name],  # Pass the ranked results
@@ -357,45 +353,44 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         and self.ds.qrels with the filtered versions.
         """
         print("Filtering dataset with the provided split.")
-        filtered_corpus_ids = set()
         filtered_query_ids = set()
-        filtered_qrels_set = set()
+        filtered_image_ids = set()
+        filtered_qrels = set()
 
         for sample in dataset_split:
             query_id = sample['query-id']
             filtered_query_ids.add(query_id)
-
             for image_id in sample['positive_passages']:
-                filtered_corpus_ids.add(image_id)
-                filtered_qrels_set.add((query_id, image_id, 1))
-
-            for image_id in sample['negative_passages']:
-                filtered_corpus_ids.add(image_id)
-
+                filtered_image_ids.add(image_id)
+                filtered_qrels.add((query_id, image_id, 1))
+                
         # Apply filtering using HuggingFace Dataset filter method
-        self.ds.corpus = self.ds.corpus.filter(
-            lambda example: example["corpus-id"] in filtered_corpus_ids)
         self.ds.queries = self.ds.queries.filter(
-            lambda example: example["query-id"] in filtered_query_ids)
-        self.ds.qrels = self.ds.qrels.filter(
-            lambda example: (
-                example["query-id"], example["corpus-id"]) in filtered_qrels_set)
+            lambda qry: qry["query-id"] in filtered_query_ids)
+        # self.ds.corpus = self.ds.corpus.filter(
+        #     lambda img: img["corpus-id"] in filtered_image_ids)
+        # self.ds.qrels = self.ds.qrels.filter(
+        #     lambda qrl: (
+        #         qrl["query-id"], qrl["corpus-id"], qrl["score"]
+        #  ) in filtered_qrels)
+
+        print(f"Filtered queries= {self.ds.queries}")
+        # print(f"Filtered images= {self.ds.corpus}")
+        # print(f"Filtered qrels= {self.ds.qrels}")
 
 # static non-class function
-def compute_metrics(checkpoint_path: str, split_name: str = "validation"):
+def compute_metrics(checkpoint_path: str=None, split_name: str = None, 
+                base_model_name:str="Metric-AI/colqwen2.5-3b-multilingual"):
     from colpali_engine.models import ColQwen2_5, ColQwen2_5_Processor
     from peft import PeftModel, PeftConfig
     from types import MethodType
     from datasets import load_dataset
-    
-    assert split_name in {"validation", "test"}, f"Unsupported split_name: {split_name}"
-    assert os.path.isdir(checkpoint_path), f"Checkpoint path does not exist: {checkpoint_path}"
 
     print(f"Loading checkpoint from: {checkpoint_path}")
 
     # Load base model
     base_model = ColQwen2_5.from_pretrained(
-        "Metric-AI/colqwen2.5-3b-multilingual",
+        base_model_name,
         device_map="auto",
         torch_dtype=torch.float16
     )
@@ -403,19 +398,22 @@ def compute_metrics(checkpoint_path: str, split_name: str = "validation"):
     base_model.config.use_cache = False
     base_model.gradient_checkpointing_enable()
 
-    # Wrap it with the LoRA adapter
-    model = PeftModel.from_pretrained(base_model, checkpoint_path)
+    if checkpoint_path is not None:
+        # Wrap it with the LoRA adapter
+        model = PeftModel.from_pretrained(base_model, checkpoint_path)
 
-    # Patch the actual inner model's inner_forward
-    original_inner_forward = model.base_model.model.inner_forward
+        # Patch the actual inner model's inner_forward
+        original_inner_forward = model.base_model.model.inner_forward
 
-    def safe_inner_forward(self, *args, **kwargs):
-        if "labels" in kwargs:
-            kwargs.pop("labels")
-        return original_inner_forward(*args, **kwargs)
+        def safe_inner_forward(self, *args, **kwargs):
+            if "labels" in kwargs:
+                kwargs.pop("labels")
+            return original_inner_forward(*args, **kwargs)
 
-    model.base_model.model.inner_forward = MethodType(safe_inner_forward, model.base_model.model)
-    ### end patch
+        model.base_model.model.inner_forward = MethodType(safe_inner_forward, model.base_model.model)
+        ### end patch
+    else:
+        model = base_model
 
     # Load processor
     processor = ColQwen2_5_Processor.from_pretrained(
@@ -423,16 +421,24 @@ def compute_metrics(checkpoint_path: str, split_name: str = "validation"):
         use_fast=False
     )
 
-    # Load the split (val/test)
-    split_file = f"./beir_splits/{'val' if split_name == 'validation' else 'test'}.jsonl"
-    dataset_split = load_dataset("json", data_files={split_name: split_file})[split_name]
-
     # Init evaluator and dataset
     evaluator = ViLARMoREvaluator(model_conf={"colqwen_finetuned": [model, processor]})
-    evaluator.ds = ViLARMoRDataset(name="vidore/docvqa_test_subsampled_beir", load_pseudos=True, load_judgements=False)
 
-    # Filter for relevant subset of data
-    evaluator.filter_from_split(dataset_split)
+    if split_name is None:
+        evaluator.ds = ViLARMoRDataset(
+            name="vidore/docvqa_test_subsampled_beir", 
+            load_pseudos=False, load_judgements=False)
+    else:
+        evaluator.ds = ViLARMoRDataset(
+            name="vidore/docvqa_test_subsampled_beir", 
+            load_pseudos=True, load_judgements=False)
+
+        # Load the split (val/test)
+        split_file = f"./beir_splits/{'val' if split_name == 'validation' else 'test'}.jsonl"
+        dataset_split = load_dataset("json", data_files={split_name: split_file})[split_name]
+
+        # Filter for relevant subset of data
+        evaluator.filter_from_split(dataset_split)
 
     # Run evaluation
     _, results = evaluator.rank()
@@ -450,7 +456,7 @@ if __name__ == "__main__":
     from vilarmor_dataset import ViLARMoRDataset
 
     # Load top 3 entries from the JSONL split
-    split_path = "beir_splits/val.jsonl"
+    split_path = "beir_splits/test.jsonl"
     with open(split_path, "r") as f:
         dataset_split = [json.loads(line) for _, line in zip(range(3), f)]
 

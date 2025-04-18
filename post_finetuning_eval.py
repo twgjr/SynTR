@@ -1,60 +1,44 @@
 import os
 import shutil
 from evaluator import compute_metrics
+from fine_tune_colqwen import get_model_and_processor
 
-def main():
+def eval():
     dataset_dir='vidore/docvqa_test_subsampled_beir/'
     destination_dir = 'metrics'
-    checkpoint_dir="colqwen_beir_checkpoints/best"
+    checkpoint_dir="trainer_output/best"
     base_model_name="Metric-AI/colqwen2.5-3b-multilingual"
     source_path = os.path.join(dataset_dir, 'metrics.json')
 
     os.makedirs(destination_dir, exist_ok=True)
 
+    model, processor = get_model_and_processor(checkpoint_dir, use_peft=True)
+
     # evaluate finetune model on test set
     compute_metrics(
-        checkpoint_path=checkpoint_dir, 
+        model_name="finetuned",
+        model= model,
+        processor=processor,
         split_name="test", 
-        base_model_name=base_model_name
     )
 
     new_filename = 'finetuned-testset.json'
     destination_path = os.path.join(destination_dir, new_filename)
     shutil.move(source_path, destination_path)
 
+    model, processor = get_model_and_processor(checkpoint_dir, use_peft=False)
+
     # evaluate base model on test set
     compute_metrics(
-        checkpoint_path=None, 
+        model_name="base",
+        model= model,
+        processor=processor,
         split_name="test", 
-        base_model_name=base_model_name
     )
 
     new_filename = 'base-testset.json'
     destination_path = os.path.join(destination_dir, new_filename)
     shutil.move(source_path, destination_path)
 
-    # evaluate finetuned model on the private set
-    compute_metrics(
-        checkpoint_path=checkpoint_dir, 
-        split_name=None, 
-        base_model_name=base_model_name
-    )
-
-    new_filename = 'finetuned-privateset.json'
-    destination_path = os.path.join(destination_dir, new_filename)
-    shutil.move(source_path, destination_path)
-
-    # evaluate base model on the private set
-    compute_metrics(
-        checkpoint_path=None, 
-        split_name=None, 
-        base_model_name=base_model_name
-    )
-
-    new_filename = 'base-privateset.json'
-    destination_path = os.path.join(destination_dir, new_filename)
-    shutil.move(source_path, destination_path)
-
-
 if __name__=="__main__":
-    main()
+    eval()

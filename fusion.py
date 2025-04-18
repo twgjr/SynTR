@@ -1,7 +1,6 @@
 from ranx import Run, fuse
 import numpy as np
 
-
 from ranx import Run
 import numpy as np
 

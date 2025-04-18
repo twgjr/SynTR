@@ -17,4 +17,8 @@ class ViLARMoRJudge(BaseVLM):
 
         if "Highly Relevant" in response:
             return True
-        return False
+
+        if "Not Relevant" in response:
+            return False
+            
+        return None

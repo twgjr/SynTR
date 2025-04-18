@@ -13,7 +13,10 @@ from colpali_engine.trainer.contrastive_trainer import ContrastiveTrainer
 from colpali_engine.collators import CorpusQueryCollator
 from colpali_engine.utils.gpu_stats import print_summary
 from peft import LoraConfig
-from transformers import BitsAndBytesConfig, EarlyStoppingCallback
+from transformers import BitsAndBytesConfig, EarlyStoppingCallback, set_seed
+
+
+set_seed(42)  # for consistent testing, sets all seeds for randomness
 
 try:
     import pynvml
@@ -47,13 +50,6 @@ class ColModelTrainingWithVal(ColModelTraining):
         super().__init__(config)
         self.num_epochs = num_epochs
 
-    def get_current_checkpoint_path(output_dir: str):
-        for name in os.listdir(output_dir):
-            if name.startswith("checkpoint-"):
-                path = os.path.join(output_dir, name)
-                return path
-        return None
-
     def train(self) -> None:
         trainer = ContrastiveTrainer(
             model=self.model,
@@ -72,31 +68,15 @@ class ColModelTrainingWithVal(ColModelTraining):
         patience_counter = 0
         metric_key = "ndcg_at_10"
 
-        prev_checkpoint_path=None
         for epoch in range(int(self.num_epochs)):
             print(f"\nStarting epoch {epoch + 1}")
-
-            if prev_checkpoint_path is not None:
-                print(f"Removing {prev_checkpoint_path}")
-                shutil.rmtree(prev_checkpoint_path)
-
             trainer.train()
 
-            print(f"Saving model to {self.config.tr_args.output_dir}")
-            trainer.save_model(self.config.tr_args.output_dir)
-
-            checkpoint_path = self.get_current_checkpoint_path(self.config.tr_args.output_dir)
-            prev_checkpoint_path = checkpoint_path
-
-            if checkpoint_path is None:
-                print("No checkpoint folder found after saving. Skipping evaluation.")
-                break
-
-            print(f"Evaluating checkpoint at: {checkpoint_path}")
+            print(f"Validating")
             metrics = compute_metrics(
                 checkpoint_path=checkpoint_path,
                 split_name="validation",
-                base_model="Metric-AI/colqwen2.5-3b-multilingual"
+                base_model_name="Metric-AI/colqwen2.5-3b-multilingual"
             )
 
             current_score = metrics[metric_key]
@@ -110,7 +90,8 @@ class ColModelTrainingWithVal(ColModelTraining):
                 best_score = current_score
                 patience_counter = 0
                 print(f"New best score {best_score:.4f}, saving as 'best'")
-                trainer.save_model(f"{self.config.tr_args.output_dir}/best")
+                # trainer.save_model(f"{self.config.tr_args.output_dir}/best")
+                self.model.save_pretrained(f"{self.config.tr_args.output_dir}/best")
             else:
                 patience_counter += 1
                 print(f"No improvement. Patience: {patience_counter}/{patience}")
@@ -119,38 +100,67 @@ class ColModelTrainingWithVal(ColModelTraining):
                 print("Early stopping triggered.")
                 break
 
-def config_model_training(best_checkpoint_dir:str=None):
-    # bnb_config = BitsAndBytesConfig(load_in_8bit=True)
+def get_model_and_processor(checkpoint_dir: str = "colqwen_beir_checkpoints/best", use_peft:bool=True):
+    from peft import PeftModel, get_peft_model, LoraConfig
+    from types import MethodType
 
-    model = ColQwen2_5.from_pretrained(
+    # Load base model
+    base_model = ColQwen2_5.from_pretrained(
         "Metric-AI/colqwen2.5-3b-multilingual",
-        # quantization_config=bnb_config,
         device_map="auto",
-        torch_dtype=torch.float16  
+        torch_dtype=torch.float16
     )
 
-    ##################################################################
-    # Monkey-patch inner_forward to safely remove 'labels' if present
-    from types import MethodType
-    original_inner_forward = model.inner_forward
+    if use_peft:
+        if checkpoint_dir is None:
+            # Define the new LoRA config for fresh starts from pretrained model
+            new_peft_config = LoraConfig(
+                r=32,
+                lora_alpha=32,
+                lora_dropout=0.1,
+                target_modules=[
+                    "self_attn.q_proj",
+                    "self_attn.k_proj",
+                    "self_attn.v_proj",
+                    "self_attn.o_proj",
+                    "mlp.gate_proj",
+                    "mlp.up_proj",
+                    "mlp.down_proj",
+                ],
+                bias="none",
+                task_type="CAUSAL_LM",
+            )
 
-    def safe_inner_forward(self, *args, **kwargs):
-        if "labels" in kwargs:
-            kwargs.pop("labels")
-        return original_inner_forward(*args, **kwargs)
+            new_peft_config.base_model_name_or_path = "Metric-AI/colqwen2.5-3b-multilingual"
 
-    model.inner_forward = MethodType(safe_inner_forward, model)
-    # End monkey patch
-    #################################################################
+            model = get_peft_model(base_model, new_peft_config)
+        else:
+            # Load PEFT adapter
+            model = PeftModel.from_pretrained(model, checkpoint_dir)
 
+        # Monkey-patch inner_forward
+        original_inner_forward = model.inner_forward
+        def safe_inner_forward(self, *args, **kwargs):
+            if "labels" in kwargs:
+                kwargs.pop("labels")
+            return original_inner_forward(*args, **kwargs)
+        model.inner_forward = MethodType(safe_inner_forward, model)
+
+    # Load processor
     processor = ColQwen2_5_Processor.from_pretrained(
         "Metric-AI/colqwen2.5-3b-multilingual",
-        use_fast=False  
+        use_fast=False
     )
+
+    return model, processor
+
+def config_model_training():
+    model, processor = get_model_and_processor(checkpoint_dir=None) 
 
     model.config.use_cache = False
     model.gradient_checkpointing_enable()
 
+    # Training settings
     training_args = TrainingArguments(
         per_device_train_batch_size=2,
         per_device_eval_batch_size=2,
@@ -159,19 +169,9 @@ def config_model_training(best_checkpoint_dir:str=None):
         num_train_epochs=1,
         bf16=True,
         optim="paged_adamw_8bit",
-        resume_from_checkpoint=best_checkpoint_dir,
     )
 
     loss_func = ColbertPairwiseNegativeCELoss()
-
-    peft_config = LoraConfig(
-        r=32,
-        lora_alpha=32,
-        lora_dropout=0.1,
-        target_modules=["q_proj", "v_proj"],
-        bias="none",
-        task_type="CAUSAL_LM",
-    )
 
     config = ColModelTrainingConfig(
         model=model,
@@ -181,15 +181,17 @@ def config_model_training(best_checkpoint_dir:str=None):
         run_eval=True,
         run_train=True,
         loss_func=loss_func,
-        peft_config=peft_config,
+        peft_config=new_peft_config,
     )
+
     return config
 
 def main():
-    checkpoint_dir="colqwen_beir_checkpoints/best"
-    config = config_model_training(checkpoint_dir)
+    config = config_model_training()
     training_app = ColModelTrainingWithVal(config, num_epochs=10)
-    training_app.train()
+    # training_app.train()
 
 if __name__ == "__main__":
+    from post_finetuning_eval import eval
     main()
+    eval()

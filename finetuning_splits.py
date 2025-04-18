@@ -1,6 +1,7 @@
 import json
 import os
 import random
+from tqdm import tqdm
 
 # Import your VilarmorDataset
 from vilarmor_dataset import ViLARMoRDataset
@@ -9,6 +10,7 @@ def generate_beir_samples(
     dataset_name: str,
     negatives_per_query: int = 3,
     seed: int = 42,
+    use_hard_neg:bool=True
 ) -> list:
     """
     Generate BEIR-style samples from the VilarmorDataset.
@@ -45,22 +47,34 @@ def generate_beir_samples(
 
     samples = []
     # For each query that has at least one positive
-    for qid, query_text in query_map.items():
+    for qid, query_text in tqdm(query_map.items(), desc="Building training splits"):
         if qid not in positive_map:
             continue  # Skip queries with no positive documents
 
         positives = positive_map[qid]
         positive = positives[0]  # Choose the first positive as the gold passage
 
-        # Negative candidates: all corpus ids excluding those judged positive for this query.
-        negative_candidates = list(all_corpus_ids - set(positives))
-        if not negative_candidates:
-            # If no negatives available, skip this query.
-            continue
+        if use_hard_neg:
+            # Get hard negatives from qrels
+            negatives = [
+                qrel["corpus-id"]
+                for qrel in qrels
+                if qrel["query-id"] == qid and qrel["score"] == 0
+            ]
 
-        # Sample negatives (if available, up to negatives_per_query)
-        num_negatives = min(negatives_per_query, len(negative_candidates))
-        negatives = random.sample(negative_candidates, num_negatives)
+            if len(negatives) < negatives_per_query:
+                raise ValueError(f"Not enough hard negatives for query-id {qid}: needed {negatives_per_query}, found {len(negatives)}")
+        else:
+            # randomly choose non-positives as hard negatives
+            # Negative candidates: all corpus ids excluding those judged positive for this query.
+            negative_candidates = list(all_corpus_ids - set(positives))
+            if not negative_candidates:
+                # If no negatives available, skip this query.
+                continue
+
+            # Sample negatives (if available, up to negatives_per_query)
+            num_negatives = min(negatives_per_query, len(negative_candidates))
+            negatives = random.sample(negative_candidates, num_negatives)
 
         sample = {
             "query": query_text,
@@ -110,7 +124,7 @@ if __name__ == "__main__":
     dataset_name = "vidore/docvqa_test_subsampled_beir"
 
     # Generate BEIR-style samples using your VilarmorDataset.
-    samples = generate_beir_samples(dataset_name=dataset_name, negatives_per_query=3, seed=42)
+    samples = generate_beir_samples(dataset_name=dataset_name, negatives_per_query=3, seed=42, use_hard_neg=True)
 
     # Split the samples into train, validation sets and save them.
     output_directory = "beir_splits"

@@ -8,8 +8,9 @@ import os
 from collections import defaultdict
 import torch
 import torch.nn.functional as F
-from transformers import PreTrainedModel, ProcessorMixin
+from transformers import PreTrainedModel, ProcessorMixin, set_seed
 from tqdm import tqdm
+
 
 from vidore_benchmark.evaluation.vidore_evaluators.base_vidore_evaluator import (
     BaseViDoReEvaluator,
@@ -24,6 +25,7 @@ from fusion import get_fusion_per_query
 from pseudo_query import PseudoQueryGenerator
 
 
+set_seed(42)  # for consistent testing, sets all seeds for randomness
 BATCH_SIZE = 1
 
 
@@ -196,8 +198,6 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                     results[model_name][str(query_id)][str(image_id)] = (
                         scores[model_name][query_idx][img_idx].item()
                     )
-
-
         return results
 
     def rank(self):
@@ -218,63 +218,103 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                 scores, query_ids, image_ids
             )
         else:
-            ranking = scores # no fusion
+            # convert scores of the single model to a ranking dict
+            model_name = next(iter(scores))
+            single_run = {str(query_ids[q_idx]): [
+                            str(image_ids[i]) for i in torch.argsort(
+                                -scores[model_name][q_idx]
+                            )
+                        ] for q_idx in range(len(query_ids))}
+            ranking = single_run
 
         return ranking, results
                 
 
     def pseudo_relevance_judgement(
-        self, judge: ViLARMoRJudge, top_m: int, ranking
+        self,
+        judge: ViLARMoRJudge,
+        top_m: int,
+        ranking,
+        num_pos: int = 1,
+        num_neg: int = 3,
+        live_dump_path: str = None,
+        final_path: str = None,
+        dump_freq: int = 100,
     ) -> dict[str, dict[str, int]]:
         """
-        Create pseudo query relevance judgments for the ranks lists made by 
-        scoring the retriever models results using the pseudo queries.
-
-        Not to be confused with the pseudo_qrels made directly from the dataset
-        using the pseudo query generator, which only have relevance for the 
-        documents used to generate queries.
-
-        This judges the retrieved documents which may include other documents
-        not used to generate the pseudo queries.
+        Judges the relevance of top_k documents for each pseudo query.
+        Resumes from live_dump_path if available.
         """
         pqrels = []
+        processed_queries = set()
 
-        queries = ranking.keys()
+        # Resume from live file if exists
+        if live_dump_path and os.path.exists(live_dump_path):
+            with open(live_dump_path, "r") as f:
+                pqrels = json.load(f)
+            processed_queries = {str(item["query-id"]) for item in pqrels}
+            print(f"Resuming from live file: {live_dump_path} (processed {len(processed_queries)} queries)")
 
-        for query_id_key in tqdm(queries, desc="Query"):
-            # get top_m documents for each query from ranking
+        queries = list(ranking.keys())
+
+        for idx, query_id_key in enumerate(tqdm(queries, desc="Query")):
+            if query_id_key in processed_queries:
+                continue  # Skip already judged query
+
             image_id_keys = ranking[query_id_key][:top_m]
             query_id = int(query_id_key)
-            
+
+            neg_count = 0
             for corpus_id_key in image_id_keys:
                 corpus_id = int(corpus_id_key)
                 image = self.ds.get_image(corpus_id)
                 query = self.ds.get_query(query_id)
 
-                if judge.is_relevant(query, image):
+                is_rel = judge.is_relevant(query, image)
+                if is_rel is False:
                     pqrels.append({
                         "query-id": query_id,
                         "corpus-id": corpus_id,
-                        "score": 1,
+                        "score": 0,
                     })
+                    neg_count += 1
+
+                if neg_count >= num_neg:
+                    break
+
+            # Overwrite live file
+            if live_dump_path and (idx % dump_freq == 0):
+                with open(live_dump_path, "w") as f:
+                    json.dump(pqrels, f, indent=4)
+                print(f"Live dump updated at: {live_dump_path} [query {idx+1}/{len(queries)}]")
+
+        # Final copy after full completion
+        if final_path:
+            with open(final_path, "w") as f:
+                json.dump(pqrels, f, indent=4)
+            print(f"Final pseudo qrels written to: {final_path}")
 
         return pqrels
 
-    def judge(self, top_m: int):
+
+    def judge(self, top_m: int, ranking):
         """
         Judges the relevance of the top_k documents for each pseudo query of 
         each dataset using the VLM model.
         """
-        pqj_path = os.path.join(self.ds.name, "pseudo_qrels_judge.json")
-        if not os.path.exists(pqj_path):
+        live_path = os.path.join(self.ds.name, "pseudo_qrels_judge_live.json")
+        final_path = os.path.join(self.ds.name, "pseudo_qrels_judge.json")
+
+        if not os.path.exists(final_path):
             judge = ViLARMoRJudge()
             print(f"Generating relevance judgements for {self.ds.name}")
-            # judge the top_m documents for each pseudo query
-            pseudo_qrels_judge = self.pseudo_relevance_judgement(judge, top_m)
 
-            with open(pqj_path, "w") as file:
-                json.dump(pseudo_qrels_judge, file, indent=4)
-
+            pseudo_qrels_judge = self.pseudo_relevance_judgement(
+                judge, top_m, ranking,
+                live_dump_path=live_path,
+                final_path=final_path,
+                dump_freq=100
+    )
 
         # load the pseudo qrels with the relevance judgements
         self.ds = ViLARMoRDataset(
@@ -327,11 +367,19 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         return final_metrics
 
 
-    def run_judge(self, ds_name, judge_top_m, gen_top_p, gen_temperature, gen_num_pqueries, 
+    def run_full(self, ds_name, judge_top_m, gen_top_p, gen_temperature, gen_num_pqueries, 
             gen_corpus_sample_size):
         print(f"Begin ViLARMoR Evaluation of {ds_name}")
         self.generate_psuedos(ds_name, gen_top_p, gen_temperature, gen_num_pqueries, 
                         gen_corpus_sample_size)
+        ranking, results = self.rank()
+        self.judge(top_m=judge_top_m, ranking=ranking)
+        self.evaluate(results)
+        print(f"ViLARMoR Evaluation Complete for {ds_name}")
+
+    def run_judge(self, ds_name, judge_top_m):
+        print(f"Begin ViLARMoR Evaluation of {ds_name}")
+        self.ds = ViLARMoRDataset(name=ds_name, load_pseudos=True, load_judgements=False)
         ranking, results = self.rank()
         self.judge(top_m=judge_top_m, ranking=ranking)
         self.evaluate(results)
@@ -347,82 +395,26 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         print(f"ViLARMoR Evaluation Complete for {ds_name}")
 
     def filter_from_split(self, dataset_split):
-        """
-        Filters the HuggingFace Datasets based on a dataset split containing query IDs
-        and their positive/negative image IDs. Updates self.ds.corpus, self.ds.queries,
-        and self.ds.qrels with the filtered versions.
-        """
         print("Filtering dataset with the provided split.")
         filtered_query_ids = set()
-        filtered_image_ids = set()
-        filtered_qrels = set()
 
         for sample in dataset_split:
             query_id = sample['query-id']
             filtered_query_ids.add(query_id)
-            for image_id in sample['positive_passages']:
-                filtered_image_ids.add(image_id)
-                filtered_qrels.add((query_id, image_id, 1))
                 
         # Apply filtering using HuggingFace Dataset filter method
         self.ds.queries = self.ds.queries.filter(
             lambda qry: qry["query-id"] in filtered_query_ids)
-        # self.ds.corpus = self.ds.corpus.filter(
-        #     lambda img: img["corpus-id"] in filtered_image_ids)
-        # self.ds.qrels = self.ds.qrels.filter(
-        #     lambda qrl: (
-        #         qrl["query-id"], qrl["corpus-id"], qrl["score"]
-        #  ) in filtered_qrels)
-
         print(f"Filtered queries= {self.ds.queries}")
-        # print(f"Filtered images= {self.ds.corpus}")
-        # print(f"Filtered qrels= {self.ds.qrels}")
 
 # static non-class function
-def compute_metrics(checkpoint_path: str=None, split_name: str = None, 
-                base_model_name:str="Metric-AI/colqwen2.5-3b-multilingual"):
-    from colpali_engine.models import ColQwen2_5, ColQwen2_5_Processor
-    from peft import PeftModel, PeftConfig
-    from types import MethodType
+def compute_metrics(model_name, model, processor, split_name: str = None):
     from datasets import load_dataset
-
-    print(f"Loading checkpoint from: {checkpoint_path}")
-
-    # Load base model
-    base_model = ColQwen2_5.from_pretrained(
-        base_model_name,
-        device_map="auto",
-        torch_dtype=torch.float16
-    )
-
-    base_model.config.use_cache = False
-    base_model.gradient_checkpointing_enable()
-
-    if checkpoint_path is not None:
-        # Wrap it with the LoRA adapter
-        model = PeftModel.from_pretrained(base_model, checkpoint_path)
-
-        # Patch the actual inner model's inner_forward
-        original_inner_forward = model.base_model.model.inner_forward
-
-        def safe_inner_forward(self, *args, **kwargs):
-            if "labels" in kwargs:
-                kwargs.pop("labels")
-            return original_inner_forward(*args, **kwargs)
-
-        model.base_model.model.inner_forward = MethodType(safe_inner_forward, model.base_model.model)
-        ### end patch
-    else:
-        model = base_model
-
-    # Load processor
-    processor = ColQwen2_5_Processor.from_pretrained(
-        "Metric-AI/colqwen2.5-3b-multilingual",
-        use_fast=False
-    )
+    
+    model_conf={model_name: [model, processor]}
 
     # Init evaluator and dataset
-    evaluator = ViLARMoREvaluator(model_conf={"colqwen_finetuned": [model, processor]})
+    evaluator = ViLARMoREvaluator(model_conf=model_conf)
 
     if split_name is None:
         evaluator.ds = ViLARMoRDataset(
@@ -448,34 +440,17 @@ def compute_metrics(checkpoint_path: str=None, split_name: str = None,
     with open(metrics_path) as f:
         metrics = json.load(f)
 
-    return metrics["colqwen_finetuned"]
+    return next(iter(metrics))
     
 if __name__ == "__main__":
-    # test filtering the dataset
-    import json
-    from vilarmor_dataset import ViLARMoRDataset
-
-    # Load top 3 entries from the JSONL split
-    split_path = "beir_splits/test.jsonl"
-    with open(split_path, "r") as f:
-        dataset_split = [json.loads(line) for _, line in zip(range(3), f)]
-
-    # Replace with actual model + processor if available
-    dummy_model_conf = {
-        "dummy-model": (None, None)
-    }
-
-    # Create evaluator instance
-    evaluator = ViLARMoREvaluator(model_conf=dummy_model_conf)
-
-    # Load full dataset
-    dataset_name = "vidore/docvqa_test_subsampled_beir"
-    evaluator.ds = ViLARMoRDataset(name=dataset_name, load_pseudos=True, load_judgements=False)
-
-    # Filter using the top 3 split examples
-    evaluator.filter_from_split(dataset_split)
-
-    # Print a quick summary to validate
-    print("Filtered queries:", evaluator.ds.queries)
-    print("Filtered corpus:", evaluator.ds.corpus)
-    print("Filtered qrels:", evaluator.ds.qrels)
+    from colpali_engine.models import (
+        ColQwen2_5,
+        ColQwen2_5_Processor,
+    )
+    ds_name="vidore/docvqa_test_subsampled_beir"
+    top_m=400
+    evaluator = ViLARMoREvaluator(
+        model_conf={
+            "Metric-AI/colqwen2.5-3b-multilingual": [
+                ColQwen2_5, ColQwen2_5_Processor]})
+    evaluator.run_judge(ds_name,top_m)

@@ -23,7 +23,7 @@ evaluator = ViLARMoREvaluator(
     model_conf = MODELS,
 )
 
-evaluator.run_generate_not_judge(
+evaluator.run_full(
     ds_name=DATASETS[0],
     gen_top_p=0.9,
     gen_temperature=1.0,

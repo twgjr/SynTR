@@ -3,6 +3,7 @@ import os
 import json
 from PIL import Image
 from tqdm import tqdm
+from collections import defaultdict
 
 
 class ViLARMoRDataset:
@@ -13,8 +14,8 @@ class ViLARMoRDataset:
         load_judgements: bool,
     ):
         self.name = name
-        self.corpus: Dataset = None
-        self.queries: Dataset = None
+        self._corpus: Dataset = None
+        self._queries: Dataset = None
         self.qrels: Dataset = None
 
         # download the full dataset if it doesn't exist
@@ -49,6 +50,25 @@ class ViLARMoRDataset:
             self._load_trues()
 
         self.corpus = self._load_corpus_from(None)
+
+    @property
+    def corpus(self):
+        return self._corpus
+
+    @corpus.setter
+    def corpus(self, value):
+        self._corpus = value
+        self._corpus_index = {int(item["corpus-id"]): i for i, item in enumerate(value)}
+
+    @property
+    def queries(self):
+        return self._queries
+
+    @queries.setter
+    def queries(self, value):
+        self._queries = value
+        self._query_index = {int(item["query-id"]): i for i, item in enumerate(value)}
+
 
     def _download_corpus(self):
         corpus: Dataset = load_dataset(self.name, "corpus")["test"]
@@ -161,49 +181,25 @@ class ViLARMoRDataset:
         )
 
     def get_image(self, corpus_id: int):
-        # Filter the dataset to find items with matching corpus-id
-        filtered_images = []
-        for item in self.corpus:
-            if int(item["corpus-id"]) == corpus_id:
-                filtered_images.append(item)
-
-        if not filtered_images:
-            raise ValueError(f"No image found for corpus_id: {corpus_id}\n")
-
-        if len(filtered_images) > 1:
-            raise ValueError(f"Duplicate corpus_id found: {corpus_id}\n")
-
-        image = filtered_images[0]["image"]
-
-        return image
+        idx = self._corpus_index.get(corpus_id)
+        if idx is None:
+            raise ValueError(f"corpus_id {corpus_id} not found in index.")
+        item = self.corpus[idx]
+        actual_id = int(item["corpus-id"])
+        if actual_id != corpus_id:
+            raise ValueError(f"ID mismatch in corpus: expected {corpus_id}, found {actual_id}")
+        return item["image"]
 
     def get_query(self, query_id: int):
-        # Filter the dataset to find items with matching query-id
-        filtered_queries = []
-        for item in self.queries:
-            if int(item["query-id"]) == query_id:
-                filtered_queries.append(item)
+        idx = self._query_index.get(query_id)
+        if idx is None:
+            raise ValueError(f"query_id {query_id} not found in index.")
+        item = self.queries[idx]
+        actual_id = int(item["query-id"])
+        if actual_id != query_id:
+            raise ValueError(f"ID mismatch in queries: expected {query_id}, found {actual_id}")
+        return item["query"]
 
-        if not filtered_queries:
-            raise ValueError(f"No query found for query_id: {query_id}\n")
-
-        if len(filtered_queries) > 1:
-            raise ValueError(f"Duplicate query_id found: {query_id}\n")
-
-        return filtered_queries[0]["query"]
-
-    def get_ids_from_qrels(self):
-        """
-        Get the query and image IDs from the qrels.  If using pseudo queries,
-        the image IDs will be a smaller subset of the corpus IDs from the
-        original dataset.
-        """
-        query_ids = set()
-        image_ids = set()
-        for qrel in self.qrels:
-            query_ids.add(qrel["query-id"])
-            image_ids.add(qrel["corpus-id"])
-        return list(query_ids), list(image_ids)
 
     def image_ids(self):
         return list(self.corpus["corpus-id"])
@@ -212,20 +208,54 @@ class ViLARMoRDataset:
         return list(self.queries["query-id"])
 
 
+def merge_and_clean_qrels(file1_path, file2_path, output_path):
+    """
+    Merges two QREL-style JSON files and removes entries with conflicting scores.
+    
+    Parameters:
+    - file1_path: str, path to the first JSON file
+    - file2_path: str, path to the second JSON file
+    - output_path: str, path where the cleaned merged output should be saved
+    """
+    # Load both JSON files
+    with open(file1_path, 'r') as f1, open(file2_path, 'r') as f2:
+        qrels_1 = json.load(f1)
+        qrels_2 = json.load(f2)
+
+    # Merge the lists
+    merged_qrels = qrels_1 + qrels_2
+
+    # Track scores by (query-id, corpus-id)
+    entry_scores = defaultdict(set)
+    for entry in merged_qrels:
+        key = (entry['query-id'], entry['corpus-id'])
+        entry_scores[key].add(entry['score'])
+
+    # Identify conflicts
+    conflict_keys = {key for key, scores in entry_scores.items() if len(scores) > 1}
+
+    # Filter out conflicting entries
+    cleaned_qrels = [
+        entry for entry in merged_qrels
+        if (entry['query-id'], entry['corpus-id']) not in conflict_keys
+    ]
+
+    # Save cleaned merged data
+    with open(output_path, 'w') as outfile:
+        json.dump(cleaned_qrels, outfile, indent=2)
+
+    print(f"Removed {len(merged_qrels) - len(cleaned_qrels)} conflicting entries.")
+    print(f"Cleaned data saved to: {output_path}")
+
+
 if __name__ == "__main__":
-    # Test without generator
-    dataset = ViLARMoRDataset(
-        name="vidore/docvqa_test_subsampled_beir",
-        load_pseudos=False,
-        load_judgements=None,
+    base_dir='general-pseudo-queries_judge'
+    file1='pseudo_qrels_judge_negatives.json'
+    file2='pseudo_qrels_positives.json'
+    output_file='cleaned_merged_qrels.json'
+
+    merge_and_clean_qrels(
+        file1_path=os.path.join(base_dir, file1), 
+        file2_path=os.path.join(base_dir, file2), 
+        output_path=os.path.join(base_dir, output_file)
     )
-    print("Loading trues")
-    print("Corpus len:", len(dataset.corpus))
-    print("Corpus first image size:", dataset.corpus[0]["image"].size)
-    print("Corpus first image id:", dataset.corpus[0]["corpus-id"])
-    print("Queries len:", len(dataset.queries))
-    print("Queries first query:", dataset.queries[0]["query"])
-    print("Queries first query id:", dataset.queries[0]["query-id"])
-    print("Qrels len:", len(dataset.qrels))
-    print("Qrels first query id:", dataset.qrels[0]["query-id"])
-    print("Qrels first corpus id:", dataset.qrels[0]["corpus-id"])

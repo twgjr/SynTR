@@ -119,13 +119,16 @@ def split_and_save_samples(
     print(f"Generated {len(train_samples)} train, {len(val_samples)} val, {len(test_samples)} test samples.")
     print(f"Files saved in directory: {output_dir}")
 
-if __name__ == "__main__":
+def make_splits(use_hard_neg):
     # Specify your dataset name as used in VilarmorDataset (e.g., "vidore/docvqa_test_subsampled_beir")
     dataset_name = "vidore/docvqa_test_subsampled_beir"
 
     # Generate BEIR-style samples using your VilarmorDataset.
-    samples = generate_beir_samples(dataset_name=dataset_name, negatives_per_query=3, seed=42, use_hard_neg=True)
+    samples = generate_beir_samples(dataset_name=dataset_name, negatives_per_query=3, seed=42, use_hard_neg=use_hard_neg)
 
     # Split the samples into train, validation sets and save them.
     output_directory = "beir_splits"
     split_and_save_samples(samples, output_dir=output_directory, val_size=0.1, seed=42)
+
+if __name__ == "__main__":
+    make_splits()

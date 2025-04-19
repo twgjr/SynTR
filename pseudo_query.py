@@ -72,13 +72,14 @@ if __name__=="__main__":
     Present the query in the form of natural questions. Do not make any \
     commentary about the search query. Only respond with the query."
 
+
     if not os.path.exists(pq_path) or not os.path.exists(pqrel_path):
         psuedo_queries, psuedo_qrels = generator.generate(
                                 dataset_name=ds_name,
                                 corpus=ds.corpus,
                                 corpus_sample_size=gen_corpus_sample_size,
                                 num_pqueries=gen_num_pqueries, 
-                                prompt=prompt
+                                # prompt=prompt
                             )
 
         with open(pq_path, "w") as f:

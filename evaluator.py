@@ -9,6 +9,7 @@ from collections import defaultdict
 import torch
 import torch.nn.functional as F
 from transformers import PreTrainedModel, ProcessorMixin, set_seed
+from datasets import load_dataset
 from tqdm import tqdm
 
 
@@ -323,7 +324,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
             load_judgements=True,
         )
 
-    def evaluate(self, results) -> dict[str, float]:
+    def evaluate(self, results, out_dir, out_name) -> dict[str, float]:
         """
         Compute the final ranking of NDGC@10 using the qrels and the ranked
         output from the retrievers.
@@ -361,11 +362,12 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
             final_metrics[model_name] = metrics
 
-        with open(os.path.join(self.ds.name, "metrics.json"), "w") as file:
+        os.makedirs(out_dir, exist_ok=True)
+
+        with open(os.path.join(out_dir, out_name+".json"), "w") as file:
             json.dump(final_metrics, file, indent=4)
         
         return final_metrics
-
 
     def run_full(self, ds_name, judge_top_m, gen_top_p, gen_temperature, gen_num_pqueries, 
             gen_corpus_sample_size):
@@ -408,9 +410,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         print(f"Filtered queries= {self.ds.queries}")
 
 # static non-class function
-def compute_metrics(model_name, model, processor, split_name: str = None):
-    from datasets import load_dataset
-    
+def compute_metrics(model_name, model, processor, split_name: str = None, out_dir="metrics", out_name="test"):
     model_conf={model_name: [model, processor]}
 
     # Init evaluator and dataset
@@ -434,9 +434,9 @@ def compute_metrics(model_name, model, processor, split_name: str = None):
 
     # Run evaluation
     _, results = evaluator.rank()
-    evaluator.evaluate(results)
+    evaluator.evaluate(results, out_dir, out_name)
 
-    metrics_path = os.path.join("vidore/docvqa_test_subsampled_beir", "metrics.json")
+    metrics_path = os.path.join(out_dir, out_name + ".json")
     with open(metrics_path) as f:
         metrics = json.load(f)
 

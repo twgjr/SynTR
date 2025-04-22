@@ -324,7 +324,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
             load_judgements=True,
         )
 
-    def evaluate(self, results, out_dir, out_name) -> dict[str, float]:
+    def evaluate(self, results) -> dict[str, float]:
         """
         Compute the final ranking of NDGC@10 using the qrels and the ranked
         output from the retrievers.
@@ -362,11 +362,6 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
 
             final_metrics[model_name] = metrics
 
-        os.makedirs(out_dir, exist_ok=True)
-
-        with open(os.path.join(out_dir, out_name+".json"), "w") as file:
-            json.dump(final_metrics, file, indent=4)
-        
         return final_metrics
 
     def run_full(self, ds_name, judge_top_m, gen_top_p, gen_temperature, gen_num_pqueries, 
@@ -396,51 +391,22 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         self.evaluate(results)
         print(f"ViLARMoR Evaluation Complete for {ds_name}")
 
-    def filter_from_split(self, dataset_split):
-        print("Filtering dataset with the provided split.")
-        filtered_query_ids = set()
 
-        for sample in dataset_split:
-            query_id = sample['query-id']
-            filtered_query_ids.add(query_id)
-                
-        # Apply filtering using HuggingFace Dataset filter method
-        self.ds.queries = self.ds.queries.filter(
-            lambda qry: qry["query-id"] in filtered_query_ids)
-        print(f"Filtered queries= {self.ds.queries}")
 
 # static non-class function
-def compute_metrics(model_name, model, processor, split_name: str = None, out_dir="metrics", out_name="test"):
-    model_conf={model_name: [model, processor]}
+def compute_metrics(model, processor, dataset:ViLARMoRDataset):
+    model_conf={"model": [model, processor]}
 
     # Init evaluator and dataset
     evaluator = ViLARMoREvaluator(model_conf=model_conf)
 
-    if split_name is None:
-        evaluator.ds = ViLARMoRDataset(
-            name="vidore/docvqa_test_subsampled_beir", 
-            load_pseudos=False, load_judgements=False)
-    else:
-        evaluator.ds = ViLARMoRDataset(
-            name="vidore/docvqa_test_subsampled_beir", 
-            load_pseudos=True, load_judgements=False)
-
-        # Load the split (val/test)
-        split_file = f"./beir_splits/{'val' if split_name == 'validation' else 'test'}.jsonl"
-        dataset_split = load_dataset("json", data_files={split_name: split_file})[split_name]
-
-        # Filter for relevant subset of data
-        evaluator.filter_from_split(dataset_split)
+    evaluator.ds = dataset
 
     # Run evaluation
     _, results = evaluator.rank()
-    evaluator.evaluate(results, out_dir, out_name)
+    metrics = evaluator.evaluate(results)
 
-    metrics_path = os.path.join(out_dir, out_name + ".json")
-    with open(metrics_path) as f:
-        metrics = json.load(f)
-
-    return next(iter(metrics))
+    return metrics
     
 if __name__ == "__main__":
     from colpali_engine.models import (

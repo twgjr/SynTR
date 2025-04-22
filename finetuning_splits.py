@@ -7,7 +7,9 @@ from tqdm import tqdm
 from vilarmor_dataset import ViLARMoRDataset
 
 def generate_beir_samples(
-    dataset_name: str,
+    dataset_dir:str, 
+    queries_path:str,
+    qrels_path:str,
     negatives_per_query: int = 3,
     seed: int = 42,
     use_hard_neg:bool=True
@@ -22,9 +24,8 @@ def generate_beir_samples(
     """
     random.seed(seed)
 
-    # Instantiate the dataset; here we load true queries (not pseudo) by setting load_pseudos=False.
-    # Adjust load_judgements as needed (here we use False for simplicity).
-    dataset = ViLARMoRDataset(name=dataset_name, load_pseudos=True, load_judgements=False)
+    # for loading ground truth dataset
+    dataset = ViLARMoRDataset(name=dataset_dir, queries_path=queries_path, qrels_path=qrels_path)
 
     # Load queries and qrels (both are lists of dictionaries)
     queries = dataset.queries      # each with keys "query-id" and "query"
@@ -119,16 +120,41 @@ def split_and_save_samples(
     print(f"Generated {len(train_samples)} train, {len(val_samples)} val, {len(test_samples)} test samples.")
     print(f"Files saved in directory: {output_dir}")
 
-def make_splits(use_hard_neg):
-    # Specify your dataset name as used in VilarmorDataset (e.g., "vidore/docvqa_test_subsampled_beir")
-    dataset_name = "vidore/docvqa_test_subsampled_beir"
-
+def make_splits(use_hard_neg, dataset_dir, out_dir, queries_path, qrels_path):
     # Generate BEIR-style samples using your VilarmorDataset.
-    samples = generate_beir_samples(dataset_name=dataset_name, negatives_per_query=3, seed=42, use_hard_neg=use_hard_neg)
+    samples = generate_beir_samples(
+        dataset_dir=dataset_dir, queries_path=queries_path, qrels_path=qrels_path, 
+        negatives_per_query=3, seed=42, use_hard_neg=use_hard_neg)
 
     # Split the samples into train, validation sets and save them.
-    output_directory = "beir_splits"
-    split_and_save_samples(samples, output_dir=output_directory, val_size=0.1, seed=42)
+    split_and_save_samples(samples, output_dir=out_dir, val_size=0.1, seed=42)
 
 if __name__ == "__main__":
-    make_splits()
+    dataset_dir="vidore/docvqa_test_subsampled_beir"
+    splits_dir="splits"
+    os.makedirs(splits_dir, exist_ok=True)
+    query_set_dir="pseudo_query_sets"
+
+    set_label="specific_no-judge"
+    query_label_dir = os.path.join(query_set_dir, set_label)
+    make_splits(use_hard_neg=False, 
+                dataset_dir=dataset_dir,
+                queries_path=os.path.join(query_label_dir, "pseudo_queries.json"), 
+                qrels_path=os.path.join(query_label_dir, "pseudo_qrels.json"), 
+                out_dir=os.path.join(splits_dir, set_label))
+
+    set_label="general_no-judge"
+    query_label_dir = os.path.join(query_set_dir, set_label)
+    make_splits(use_hard_neg=False, 
+                dataset_dir=dataset_dir,
+                queries_path=os.path.join(query_label_dir, "pseudo_queries.json"), 
+                qrels_path=os.path.join(query_label_dir, "pseudo_qrels.json"), 
+                out_dir=os.path.join(splits_dir, set_label))
+
+    set_label="general_judge-hard-neg"
+    query_label_dir = os.path.join(query_set_dir, set_label)
+    make_splits(use_hard_neg=True, # Judge made hard negatives in this set
+                dataset_dir=dataset_dir,
+                queries_path=os.path.join(query_label_dir, "pseudo_queries.json"), 
+                qrels_path=os.path.join(query_label_dir, "pseudo_qrels_merged.json"), 
+                out_dir=os.path.join(splits_dir, set_label))

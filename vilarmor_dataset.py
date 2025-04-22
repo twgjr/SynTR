@@ -10,8 +10,8 @@ class ViLARMoRDataset:
     def __init__(
         self,
         name: str,
-        load_pseudos: bool,
-        load_judgements: bool,
+        queries_path:str=None,
+        qrels_path:str=None
     ):
         self.name = name
         self._corpus: Dataset = None
@@ -44,10 +44,9 @@ class ViLARMoRDataset:
             self._save_data(queries_data, os.path.join(self.name, "queries.json"))
             self._save_data(qrels_data, os.path.join(self.name, "qrels.json"))
             
-        if load_pseudos:
-            self._load_pseudos(load_judgements)
-        else:
-            self._load_trues()
+        if queries_path and qrels_path:
+            self.queries, self.qrels = self._load_queries_qrels(
+                queries_path=queries_path, qrels_path=qrels_path)
 
         self.corpus = self._load_corpus_from(None)
 
@@ -150,35 +149,14 @@ class ViLARMoRDataset:
 
         return Dataset.from_list(corpus_data)
 
-    def _load_queries_qrels(self, querys_path: str, qrels_path: str):
+    def _load_queries_qrels(self, queries_path: str, qrels_path: str):
         with open(qrels_path, "r") as f:
             qrels = json.load(f)
 
-        with open(querys_path, "r") as f:
+        with open(queries_path, "r") as f:
             queries = json.load(f)
 
         return Dataset.from_list(queries), Dataset.from_list(qrels)
-
-    def _load_pseudos(self, load_judgements: bool):
-        pq_path = os.path.join(self.name, "pseudo_queries.json")
-        if load_judgements:
-            pqrel_path = os.path.join(self.name, "pseudo_qrels_judge.json")
-        else:
-            pqrel_path = os.path.join(self.name, "pseudo_qrels.json")
-
-        self.queries, self.qrels = self._load_queries_qrels(
-            querys_path=pq_path,
-            qrels_path=pqrel_path,
-        )
-
-    def _load_trues(self):
-        queries_path = os.path.join(self.name, "queries.json")
-        qrels_path = os.path.join(self.name, "qrels.json")
-
-        self.queries, self.qrels = self._load_queries_qrels(
-            querys_path=queries_path,
-            qrels_path=qrels_path,
-        )
 
     def get_image(self, corpus_id: int):
         idx = self._corpus_index.get(corpus_id)
@@ -206,6 +184,22 @@ class ViLARMoRDataset:
     
     def query_ids(self):
         return list(self.queries["query-id"])
+
+    def filter_from_split(self, split_path):
+        print("Filtering dataset with the provided split.")
+        # Load the split (val/test) from path
+        dataset_split = load_dataset("json", data_files={"split": split_path})["split"]
+
+        filtered_query_ids = set()
+
+        for sample in dataset_split:
+            query_id = sample['query-id']
+            filtered_query_ids.add(query_id)
+                
+        # Apply filtering using HuggingFace Dataset filter method
+        self.queries = self.queries.filter(
+            lambda qry: qry["query-id"] in filtered_query_ids)
+        print(f"Filtered queries= {self.queries}")
 
 
 def merge_and_clean_qrels(file1_path, file2_path, output_path):
@@ -249,13 +243,14 @@ def merge_and_clean_qrels(file1_path, file2_path, output_path):
 
 
 if __name__ == "__main__":
-    base_dir='general-pseudo-queries_judge'
-    file1='pseudo_qrels_judge_negatives.json'
-    file2='pseudo_qrels_positives.json'
-    output_file='cleaned_merged_qrels.json'
+    # base_dir='general-pseudo-queries_judge'
+    # file1='pseudo_qrels_judge_negatives.json'
+    # file2='pseudo_qrels_positives.json'
+    # output_file='cleaned_merged_qrels.json'
 
-    merge_and_clean_qrels(
-        file1_path=os.path.join(base_dir, file1), 
-        file2_path=os.path.join(base_dir, file2), 
-        output_path=os.path.join(base_dir, output_file)
-    )
+    # merge_and_clean_qrels(
+    #     file1_path=os.path.join(base_dir, file1), 
+    #     file2_path=os.path.join(base_dir, file2), 
+    #     output_path=os.path.join(base_dir, output_file)
+    # )
+    pass

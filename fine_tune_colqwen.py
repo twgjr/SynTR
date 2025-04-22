@@ -3,6 +3,7 @@ import os
 import shutil
 import torch
 import warnings
+from tqdm import tqdm
 from types import MethodType
 from datasets import load_dataset
 from transformers import TrainingArguments
@@ -27,15 +28,18 @@ from evaluator import compute_metrics
 
 def dataset_loading_func():
     data_files = {
-        "train": "beir_splits/train.jsonl",
-        "validation": "beir_splits/val.jsonl",
+        "train": "splits/general_judge-single-hard-neg/train.jsonl",
+        "validation": "splits/general_judge-single-hard-neg/val.jsonl",
     }
     beir_dataset = load_dataset("json", data_files=data_files)
 
-    # Instantiate ViLARMoRDataset to get the corpus images.
-    # The dataset name should be the same as used when generating the splits.
+    # Instantiate ViLARMoRDataset to get the corpus images matching splits.
     dataset_name = "vidore/docvqa_test_subsampled_beir"
-    vil_dataset = ViLARMoRDataset(name=dataset_name, load_pseudos=True, load_judgements=False)
+    vil_dataset = ViLARMoRDataset(
+        name=dataset_name, 
+        queries_path="pseudo_query_sets/general_judge-hard-neg/pseudo_queries.json",
+        qrels_path="pseudo_query_sets/general_judge-hard-neg/pseudo_qrels.json")
+
     corpus_dataset = vil_dataset.corpus
 
     # Specify the corpus format as used in CorpusQueryCollator
@@ -65,36 +69,7 @@ class ColModelTrainingWithVal(ColModelTraining):
         trainer.args.remove_unused_columns = False
         trainer.train()
 
-def get_best_checkpoint_dir(base_dir: str = "./checkpoints") -> str:
-    # Find the checkpoint with the highest number
-    checkpoint_dirs = [
-        d for d in os.listdir(base_dir)
-        if d.startswith("checkpoint-") and os.path.isdir(os.path.join(base_dir, d))
-    ]
-    if not checkpoint_dirs:
-        raise FileNotFoundError(f"No checkpoints found in {base_dir}")
-
-    latest_checkpoint = max(checkpoint_dirs, key=lambda x: int(x.split('-')[-1]))
-    state_path = os.path.join(base_dir, latest_checkpoint, "trainer_state.json")
-    
-    if not os.path.exists(state_path):
-        raise FileNotFoundError(f"No trainer_state.json found in {state_path}")
-    
-    with open(state_path, "r") as f:
-        trainer_state = json.load(f)
-    
-    best_ckpt = trainer_state.get("best_model_checkpoint", None)
-    if best_ckpt is None:
-        raise ValueError("No 'best_model_checkpoint' found in trainer_state.json")
-    print(f"Using best checkpoint: {best_ckpt}")
-    
-    return best_ckpt
-
-
 def get_model_and_processor(checkpoint_dir: str = None, use_peft:bool=True):
-    if use_peft and checkpoint_dir:
-        best_model_dir = get_best_checkpoint_dir(checkpoint_dir)
-
     # Load Qwen‑base + Metric‑AI’s LoRA adapter in one go
     model = ColQwen2_5.from_pretrained(
         "Metric-AI/colqwen2.5-3b-multilingual",
@@ -118,7 +93,7 @@ def get_model_and_processor(checkpoint_dir: str = None, use_peft:bool=True):
     if use_peft:
         if checkpoint_dir:
             # load LoRA trained and saved LoRA adapters
-            model = PeftModel.from_pretrained(model, best_model_dir)
+            model = PeftModel.from_pretrained(model, checkpoint_dir)
             peft_config = None
         else:
             # Add new LoRA adapters yet to be trained.
@@ -149,11 +124,12 @@ def get_model_and_processor(checkpoint_dir: str = None, use_peft:bool=True):
         use_fast=False,
     )
 
-    # Return the new peft_config so config_model_training can see it
     return model, processor, peft_config
 
-def config_model_training():
-    model, processor, peft_config = get_model_and_processor(use_peft=True)
+def config_model_training(checkpoint_dir: str = None):
+    model, processor, peft_config = get_model_and_processor(
+        checkpoint_dir=checkpoint_dir,
+        use_peft=True)
 
     model.config.use_cache = False
     model.gradient_checkpointing_enable()
@@ -189,17 +165,14 @@ def config_model_training():
         pretrained_peft_model_name_or_path=None,
     )
 
-
     return config
 
 def main():
-    config = config_model_training()
+    config = config_model_training(
+        checkpoint_dir=None
+    )
     training_app = ColModelTrainingWithVal(config, num_epochs=10)
     training_app.train()
 
 if __name__ == "__main__":
-    from post_finetuning_eval import eval
-    from finetuning_splits import make_splits
-    make_splits(use_hard_neg=False)
     main()
-    eval()

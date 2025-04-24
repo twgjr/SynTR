@@ -236,7 +236,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         judge: ViLARMoRJudge,
         top_m: int,
         ranking,
-        num_pos: int = 1,
+        num_pos: int = 2,
         num_neg: int = 3,
         live_dump_path: str = None,
         final_path: str = None,
@@ -266,6 +266,7 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
             query_id = int(query_id_key)
 
             neg_count = 0
+            pos_count = 0
             for corpus_id_key in image_id_keys:
                 corpus_id = int(corpus_id_key)
                 image = self.ds.get_image(corpus_id)
@@ -279,8 +280,15 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
                         "score": 0,
                     })
                     neg_count += 1
+                elif is_rel is True:
+                    pqrels.append({
+                        "query-id": query_id,
+                        "corpus-id": corpus_id,
+                        "score": 1,
+                    })
+                    pos_count += 1
 
-                if neg_count >= num_neg:
+                if neg_count >= num_neg and pos_count >= num_pos:
                     break
 
             # Overwrite live file

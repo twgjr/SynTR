@@ -135,26 +135,10 @@ if __name__ == "__main__":
     os.makedirs(splits_dir, exist_ok=True)
     query_set_dir="pseudo_query_sets"
 
-    set_label="specific_no-judge"
-    query_label_dir = os.path.join(query_set_dir, set_label)
-    make_splits(use_hard_neg=False, 
-                dataset_dir=dataset_dir,
-                queries_path=os.path.join(query_label_dir, "pseudo_queries.json"), 
-                qrels_path=os.path.join(query_label_dir, "pseudo_qrels.json"), 
-                out_dir=os.path.join(splits_dir, set_label))
-
-    set_label="general_no-judge"
-    query_label_dir = os.path.join(query_set_dir, set_label)
-    make_splits(use_hard_neg=False, 
-                dataset_dir=dataset_dir,
-                queries_path=os.path.join(query_label_dir, "pseudo_queries.json"), 
-                qrels_path=os.path.join(query_label_dir, "pseudo_qrels.json"), 
-                out_dir=os.path.join(splits_dir, set_label))
-
-    set_label="general_judge-hard-neg"
+    set_label="general_judge-hard-3neg-1q"
     query_label_dir = os.path.join(query_set_dir, set_label)
     make_splits(use_hard_neg=True, # Judge made hard negatives in this set
                 dataset_dir=dataset_dir,
-                queries_path=os.path.join(query_label_dir, "pseudo_queries.json"), 
-                qrels_path=os.path.join(query_label_dir, "pseudo_qrels_merged.json"), 
+                queries_path=os.path.join(query_label_dir, "renum_filtered_pseudo_queries.json"), 
+                qrels_path=os.path.join(query_label_dir, "renum_filtered_pseudo_qrels.json"), 
                 out_dir=os.path.join(splits_dir, set_label))

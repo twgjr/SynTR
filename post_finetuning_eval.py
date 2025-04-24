@@ -77,25 +77,25 @@ def load_dataset(ds_path, splits_path, pseudo_queries_path, pqrels_path):
 
     return dataset
 
-def eval_set(ds_path, query_set_label, split_set_label):
+def eval_set(ds_path, query_set_label, split_set_label, result_set_label):
     val_splits_path = f"splits/{split_set_label}/val.jsonl"
     test_splits_path = f"splits/{split_set_label}/test.jsonl"
     pseudo_queries_path = f"pseudo_query_sets/{query_set_label}/pseudo_queries.json"
     pqrels_path = f"pseudo_query_sets/{query_set_label}/pseudo_qrels.json"
-    cp_dir = f"results/{split_set_label}/checkpoints"
+    cp_dir = f"results/{result_set_label}/checkpoints"
 
-    # ### Validation ###
-    # dataset = load_dataset(
-    #     ds_path=ds_path, splits_path=val_splits_path, 
-    #     pseudo_queries_path=pseudo_queries_path, pqrels_path=pqrels_path
-    # )
+    ### Validation ###
+    dataset = load_dataset(
+        ds_path=ds_path, splits_path=val_splits_path, 
+        pseudo_queries_path=pseudo_queries_path, pqrels_path=pqrels_path
+    )
 
-    # # validation
-    # val_metrics = compute_validation(base_dir=cp_dir, dataset=dataset)
+    # validation
+    val_metrics = compute_validation(base_dir=cp_dir, dataset=dataset)
 
-    # # save validation metrics
-    # with open(f"results/{split_set_label}/val_metrics.json", "w") as f:
-    #     json.dump(val_metrics, f, indent=4)
+    # save validation metrics
+    with open(f"results/{result_set_label}/val_metrics.json", "w") as f:
+        json.dump(val_metrics, f, indent=4)
 
     #### Test ###
     dataset = load_dataset(
@@ -104,19 +104,20 @@ def eval_set(ds_path, query_set_label, split_set_label):
     )
 
     # # test fine-tuned model
-    # test_metrics = compute_test(base_dir=cp_dir, dataset=dataset, val_metrics=val_metrics)
-    # # save test metrics
-    # with open(f"results/{split_set_label}/test_metrics_finetuned.json", "w") as f:
-    #     json.dump(test_metrics, f, indent=4)
+    test_metrics = compute_test(base_dir=cp_dir, dataset=dataset, val_metrics=val_metrics)
+    # save test metrics
+    with open(f"results/{result_set_label}/test_metrics_finetuned.json", "w") as f:
+        json.dump(test_metrics, f, indent=4)
 
     # test base model
     test_metrics = compute_test(base_dir=cp_dir, dataset=dataset, val_metrics=None)
     # save test metrics
-    with open(f"results/{split_set_label}/test_metrics_base.json", "w") as f:
+    with open(f"results/{result_set_label}/test_metrics_base.json", "w") as f:
         json.dump(test_metrics, f, indent=4)
 
 
 if __name__=="__main__":
     eval_set(ds_path="vidore/docvqa_test_subsampled_beir", 
-        split_set_label="general_judge-single-hard-neg",
-        query_set_label="general_judge-hard-neg")
+        split_set_label="general_judge-hard-3neg-1q",
+        query_set_label="general_judge-hard-3neg-1q",
+        result_set_label="general_judge-hard-3neg-1q-extra")

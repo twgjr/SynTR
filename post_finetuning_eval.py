@@ -118,6 +118,6 @@ def eval_set(ds_path, query_set_label, split_set_label, result_set_label):
 
 if __name__=="__main__":
     eval_set(ds_path="vidore/docvqa_test_subsampled_beir", 
-        split_set_label="general_judge-hard-3neg-1q",
-        query_set_label="general_judge-hard-3neg-1q",
-        result_set_label="general_judge-hard-3neg-1q-extra")
+        split_set_label="general_judge-1-pos",
+        query_set_label="general_judge-1-pos",
+        result_set_label="general_judge-1-pos")

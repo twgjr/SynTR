@@ -28,8 +28,8 @@ from evaluator import compute_metrics
 
 def dataset_loading_func():
     data_files = {
-        "train": "splits/general_judge-hard-3neg-1q/train.jsonl",
-        "validation": "splits/general_judge-hard-3neg-1q/val.jsonl",
+        "train": "splits/general_judge-1-pos/train.jsonl",
+        "validation": "splits/general_judge-1-pos/val.jsonl",
     }
     beir_dataset = load_dataset("json", data_files=data_files)
 
@@ -37,8 +37,8 @@ def dataset_loading_func():
     dataset_name = "vidore/docvqa_test_subsampled_beir"
     vil_dataset = ViLARMoRDataset(
         name=dataset_name, 
-        queries_path="pseudo_query_sets/general_judge-hard-3neg-1q/renum_filtered_pseudo_queries.json",
-        qrels_path="pseudo_query_sets/general_judge-hard-3neg-1q/renum_filtered_pseudo_qrels.json")
+        queries_path="pseudo_query_sets/general_judge-1-pos/pseudo_queries.json",
+        qrels_path="pseudo_query_sets/general_judge-1-pos/pseudo_qrels_judge_1pos_merged.json")
 
     corpus_dataset = vil_dataset.corpus
 
@@ -139,7 +139,7 @@ def config_model_training(checkpoint_dir: str = None):
         per_device_eval_batch_size=2,
         gradient_accumulation_steps=4,
         learning_rate=2e-4,
-        num_train_epochs=20,
+        num_train_epochs=15,
         bf16=True,
         optim="paged_adamw_8bit",
         eval_strategy="epoch",
@@ -168,7 +168,7 @@ def config_model_training(checkpoint_dir: str = None):
 
 def main():
     config = config_model_training(
-        checkpoint_dir="results/general_judge-hard-3neg-1q/checkpoints/checkpoint-390"
+        checkpoint_dir=None
     )
     training_app = ColModelTrainingWithVal(config)
     training_app.train()

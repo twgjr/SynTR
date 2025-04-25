@@ -5,3 +5,4 @@ colqwen_beir_checkpoints/
 beir_splits/
 results/
 pseudo_query_sets/
+splits/

@@ -236,34 +236,32 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         judge: ViLARMoRJudge,
         top_m: int,
         ranking,
-        num_pos: int = 2,
-        num_neg: int = 3,
+        num_pos: int = 1,
+        num_neg: int = 0,
         live_dump_path: str = None,
         final_path: str = None,
         dump_freq: int = 100,
-    ) -> dict[str, dict[str, int]]:
+    ) -> list[dict]:
         """
         Judges the relevance of top_k documents for each pseudo query.
         Resumes from live_dump_path if available.
         """
         pqrels = []
-        processed_queries = set()
+        
+        queries = list(ranking.keys())
 
         # Resume from live file if exists
         if live_dump_path and os.path.exists(live_dump_path):
             with open(live_dump_path, "r") as f:
                 pqrels = json.load(f)
-            processed_queries = {str(item["query-id"]) for item in pqrels}
-            print(f"Resuming from live file: {live_dump_path} (processed {len(processed_queries)} queries)")
-
-        queries = list(ranking.keys())
+            last_query_id = pqrels[-1]["query-id"]
+            print(f"Resuming from live file: {live_dump_path} (last query-id = {last_query_id})")
+            queries = queries[(last_query_id + 1):]
 
         for idx, query_id_key in enumerate(tqdm(queries, desc="Query")):
-            if query_id_key in processed_queries:
-                continue  # Skip already judged query
-
             image_id_keys = ranking[query_id_key][:top_m]
             query_id = int(query_id_key)
+            print(f"Query: {query_id}, docs: \n{image_id_keys}")
 
             neg_count = 0
             pos_count = 0
@@ -380,24 +378,23 @@ class ViLARMoREvaluator(BaseViDoReEvaluator):
         ranking, results = self.rank()
         self.judge(top_m=judge_top_m, ranking=ranking)
         self.evaluate(results)
-        print(f"ViLARMoR Evaluation Complete for {ds_name}")
 
-    def run_judge(self, ds_name, judge_top_m):
-        print(f"Begin ViLARMoR Evaluation of {ds_name}")
-        self.ds = ViLARMoRDataset(name=ds_name, load_pseudos=True, load_judgements=False)
+    def run_judge(self, ds_name, judge_top_m, queries_path, qrels_path):
+        print(f"Begin Relevance Judgements of {ds_name}")
+        self.ds = ViLARMoRDataset(name=ds_name, queries_path=queries_path, qrels_path=qrels_path)
         ranking, results = self.rank()
+        with open("ranking_test.json", "w") as f:
+            json.dump(ranking, f, indent=4)
         self.judge(top_m=judge_top_m, ranking=ranking)
         self.evaluate(results)
-        print(f"ViLARMoR Evaluation Complete for {ds_name}")
 
     def run_generate_not_judge(self, ds_name, gen_top_p, gen_temperature, gen_num_pqueries, 
             gen_corpus_sample_size):
-        print(f"Begin ViLARMoR Evaluation of {ds_name}")
+        print(f"Begin Query Generation of {ds_name}")
         self.generate_psuedos(ds_name, gen_top_p, gen_temperature, gen_num_pqueries, 
                         gen_corpus_sample_size)
         _, results = self.rank()
         self.evaluate(results)
-        print(f"ViLARMoR Evaluation Complete for {ds_name}")
 
 
 
@@ -422,9 +419,12 @@ if __name__ == "__main__":
         ColQwen2_5_Processor,
     )
     ds_name="vidore/docvqa_test_subsampled_beir"
-    top_m=400
+    top_m=20
     evaluator = ViLARMoREvaluator(
         model_conf={
             "Metric-AI/colqwen2.5-3b-multilingual": [
                 ColQwen2_5, ColQwen2_5_Processor]})
-    evaluator.run_judge(ds_name,top_m)
+    evaluator.run_judge(ds_name,top_m,
+        queries_path="pseudo_query_sets/general_judge-hard-3neg/pseudo_queries.json",
+        qrels_path="vidore/docvqa_test_subsampled_beir/qrels.json" # does nothing for judging
+    )

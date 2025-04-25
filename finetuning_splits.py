@@ -15,7 +15,9 @@ def generate_beir_samples(
     use_hard_neg:bool=True
 ) -> list:
     """
-    Generate BEIR-style samples from the VilarmorDataset.
+    Generate BEIR-style samples from the VilarmorDataset. Assumes that every 
+    query has at least one positive and negatives_per_query negatives, and 
+    no duplicates or conflicts
     
     Each sample is a dictionary with keys:
       - "query": the query text.
@@ -32,58 +34,42 @@ def generate_beir_samples(
     qrels = dataset.qrels          # each with keys "query-id", "corpus-id", "score"
     corpus = dataset.corpus        # a Hugging Face Dataset of corpus items (each has "corpus-id" and image data)
 
-    # Build a set of all corpus IDs from the corpus.
-    all_corpus_ids = {item["corpus-id"] for item in corpus}
+    query_map = {}
+    for item in queries:
+        query_id = item['query-id']
+        query = item['query']
+        query_map[query_id]=query
 
-    # Build a mapping from query-id to query text.
-    query_map = {q["query-id"]: q["query"] for q in queries}
-
-    # Build a mapping from query-id to a list of positive corpus ids.
+    # Init map of queries to positives and negatives
     positive_map = {}
     for qrel in qrels:
+        positive_map[qrel["query-id"]] = {"positives":[], "negatives":[]}
+
+    # repeat and add positives and negatives
+    for qrel in qrels:
         qid = qrel["query-id"]
-        # Assume a positive judgment is indicated by a score > 0
-        if qrel["score"] > 0:
-            positive_map.setdefault(qid, []).append(qrel["corpus-id"])
+        doc_id = qrel["corpus-id"]
+        rel_val = qrel['score']
+        if rel_val > 0:
+            positive_map[qid]['positives'].append(doc_id)
+        else:
+            positive_map[qid]['negatives'].append(doc_id)
 
     samples = []
-    # For each query that has at least one positive
-    for qid, query_text in tqdm(query_map.items(), desc="Building training splits"):
-        if qid not in positive_map:
-            continue  # Skip queries with no positive documents
+    for qid in positive_map:
+        for positive in positive_map[qid]["positives"]:
+            negative_candidates = positive_map[qid]["negatives"]
+            # randomly sample without replacement from the negatives
+            sample_count = min(len(negative_candidates), negatives_per_query)
+            negatives = random.sample(negative_candidates, sample_count)
 
-        positives = positive_map[qid]
-        positive = positives[0]  # Choose the first positive as the gold passage
-
-        if use_hard_neg:
-            # Get hard negatives from qrels
-            negatives = [
-                qrel["corpus-id"]
-                for qrel in qrels
-                if qrel["query-id"] == qid and qrel["score"] == 0
-            ]
-
-            if len(negatives) < negatives_per_query:
-                raise ValueError(f"Not enough hard negatives for query-id {qid}: needed {negatives_per_query}, found {len(negatives)}")
-        else:
-            # randomly choose non-positives as hard negatives
-            # Negative candidates: all corpus ids excluding those judged positive for this query.
-            negative_candidates = list(all_corpus_ids - set(positives))
-            if not negative_candidates:
-                # If no negatives available, skip this query.
-                continue
-
-            # Sample negatives (if available, up to negatives_per_query)
-            num_negatives = min(negatives_per_query, len(negative_candidates))
-            negatives = random.sample(negative_candidates, num_negatives)
-
-        sample = {
-            "query": query_text,
+            sample = {
+            "query": query_map[qid],
             "query-id": qid,
             "positive_passages": [positive],
             "negative_passages": negatives,
-        }
-        samples.append(sample)
+            }
+            samples.append(sample)
 
     return samples
 
@@ -133,12 +119,9 @@ if __name__ == "__main__":
     dataset_dir="vidore/docvqa_test_subsampled_beir"
     splits_dir="splits"
     os.makedirs(splits_dir, exist_ok=True)
-    query_set_dir="pseudo_query_sets"
 
-    set_label="general_judge-hard-3neg-1q"
-    query_label_dir = os.path.join(query_set_dir, set_label)
     make_splits(use_hard_neg=True, # Judge made hard negatives in this set
                 dataset_dir=dataset_dir,
-                queries_path=os.path.join(query_label_dir, "renum_filtered_pseudo_queries.json"), 
-                qrels_path=os.path.join(query_label_dir, "renum_filtered_pseudo_qrels.json"), 
-                out_dir=os.path.join(splits_dir, set_label))
+                queries_path="pseudo_query_sets/general_judge-1-pos/pseudo_queries.json", 
+                qrels_path="pseudo_query_sets/general_judge-1-pos/pseudo_qrels_judge_1pos_merged.json", 
+                out_dir="splits/general_judge-1-pos")

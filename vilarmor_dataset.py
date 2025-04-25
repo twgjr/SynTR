@@ -203,15 +203,6 @@ class ViLARMoRDataset:
 
 
 def merge_and_clean_qrels(file1_path, file2_path, output_path):
-    """
-    Merges two QREL-style JSON files and removes entries with conflicting scores.
-    
-    Parameters:
-    - file1_path: str, path to the first JSON file
-    - file2_path: str, path to the second JSON file
-    - output_path: str, path where the cleaned merged output should be saved
-    """
-    # Load both JSON files
     with open(file1_path, 'r') as f1, open(file2_path, 'r') as f2:
         qrels_1 = json.load(f1)
         qrels_2 = json.load(f2)
@@ -228,29 +219,108 @@ def merge_and_clean_qrels(file1_path, file2_path, output_path):
     # Identify conflicts
     conflict_keys = {key for key, scores in entry_scores.items() if len(scores) > 1}
 
-    # Filter out conflicting entries
-    cleaned_qrels = [
-        entry for entry in merged_qrels
-        if (entry['query-id'], entry['corpus-id']) not in conflict_keys
-    ]
+
+    # Track seen (query-id, corpus-id, score) triples to avoid duplicates
+    seen_entries = set()
+    cleaned_qrels = []
+    for entry in merged_qrels:
+        query_id = entry['query-id']
+        key = (query_id, entry['corpus-id'])
+        full_key = (query_id, entry['corpus-id'], entry['score'])
+
+        if (key not in conflict_keys) and (full_key not in seen_entries):
+            cleaned_qrels.append(entry)
+            seen_entries.add(full_key)
+
+    # Determine which query-ids have at least one score == 1
+    query_has_positive = {}
+    for entry in cleaned_qrels:
+        if entry['score'] == 1:
+            query_has_positive[entry['query-id']] = True
+
+    cleaned_qrels_no_missing = []
+    for entry in cleaned_qrels:
+        query_id = entry['query-id']
+        key = (query_id, entry['corpus-id'])
+        full_key = (query_id, entry['corpus-id'], entry['score'])
+
+        if query_id in query_has_positive:
+            cleaned_qrels_no_missing.append(entry)
 
     # Save cleaned merged data
     with open(output_path, 'w') as outfile:
-        json.dump(cleaned_qrels, outfile, indent=2)
+        json.dump(cleaned_qrels_no_missing, outfile, indent=2)
 
-    print(f"Removed {len(merged_qrels) - len(cleaned_qrels)} conflicting entries.")
+    removed_entries = len(merged_qrels) - len(cleaned_qrels_no_missing)
+    print(f"Removed {removed_entries} entries (conflicts, 0s without 1s, duplicates, queries missing positives).")
     print(f"Cleaned data saved to: {output_path}")
 
 
-if __name__ == "__main__":
-    # base_dir='general-pseudo-queries_judge'
-    # file1='pseudo_qrels_judge_negatives.json'
-    # file2='pseudo_qrels_positives.json'
-    # output_file='cleaned_merged_qrels.json'
+def report_on_qrels(qrels_path):
+    qrels = []
+    with open(qrels_path, 'r') as f:
+        qrels = json.load(f)
 
-    # merge_and_clean_qrels(
-    #     file1_path=os.path.join(base_dir, file1), 
-    #     file2_path=os.path.join(base_dir, file2), 
-    #     output_path=os.path.join(base_dir, output_file)
-    # )
-    pass
+    qrel_report_map = {}
+    #init entries
+    for qrel in qrels:
+        qrel_report_map[qrel['query-id']] = {"pos":0, "neg":0}
+
+    # populate
+    for qrel in qrels:
+        if qrel['score'] == 0:
+            qrel_report_map[qrel['query-id']]["neg"] += 1
+        elif qrel['score'] > 0:
+            qrel_report_map[qrel['query-id']]["pos"] += 1
+
+    # collect summary statisticts
+    total_pos = 0
+    no_pos = [] # queries with no positives
+    no_neg = [] # queries with no negatives
+    q_count = 0
+    more_docs = []
+    max_neg_per_q = None
+    min_neg_per_q = None
+
+    for qid in qrel_report_map:
+        q_count += 1
+        num_pos = qrel_report_map[qid]["pos"]
+        num_neg = qrel_report_map[qid]["neg"]
+
+        if max_neg_per_q is None:
+            max_neg_per_q = num_neg
+        else:
+            max_neg_per_q = max(max_neg_per_q, num_neg)
+
+        if min_neg_per_q is None:
+            min_neg_per_q = num_neg
+        else:
+            min_neg_per_q = min(min_neg_per_q, num_neg)
+
+        if num_pos > 0:
+            total_pos += num_pos
+        if num_pos > 1:
+            more_docs.append(qid)
+        if num_pos == 0:
+            no_pos.append(qid)
+        if num_neg == 0:
+            no_neg.append(qid)
+
+    print(f"{total_pos} total hard positives")
+    print(f"{q_count} queries")
+    print(f"{len(more_docs)} queries with more than 1 doc: {more_docs}")
+    print(f"{len(no_neg)} queries missing negatives: {no_neg}")
+    print(f"{len(no_pos)} queries missing positives: {no_pos}")
+    print(f"negatives range from {min_neg_per_q} to {max_neg_per_q}")
+
+if __name__ == "__main__":
+    out_path="pseudo_query_sets/general_judge-1-pos/pseudo_qrels_judge_1pos_merged.json"
+    merge_and_clean_qrels(
+        file1_path="pseudo_query_sets/general_judge-1-pos/pseudo_qrels_judge_1pos.json",
+        file2_path="pseudo_query_sets/general_judge-hard-3neg/pseudo_qrels.json",
+        output_path=out_path,
+    )
+    report_on_qrels(out_path)
+
+    
+

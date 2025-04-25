@@ -1,50 +1,38 @@
-import torch
 from ranx import Run, fuse
+import numpy as np
+
+from ranx import Run
+import numpy as np
 
 def tensor_list_to_ranx_runs(score_matrix_list, query_ids, image_ids):
-    """
-    Convert a list of 2D tensors (one per retriever) into a list of `ranx.Run` objects.
-
-    Args:
-        score_matrix_list (List[torch.Tensor]): List of tensors (one per retriever).
-        query_ids (List[int]): List of query IDs.
-        image_ids (List[int]): List of image IDs.
-
-    Returns:
-        List[ranx.Run]: List of `Run` objects.
-    """
-    print(f"Query IDs length: {len(query_ids)}, Image IDs length: {len(image_ids)}")
     runs = []
-    for score_matrix in score_matrix_list:
-        print(f"Score matrix shape: {score_matrix.shape}")
-        retriever_dict = {
-            str(query_ids[q]):
-            {str(image_ids[d]): 
-                float(score_matrix[q, d]) for d in range(score_matrix.shape[1])}
-            for q in range(score_matrix.shape[0])
-        }
-        runs.append(Run(retriever_dict))
+    for model_key in score_matrix_list:
+        score_matrix = score_matrix_list[model_key]
+        retriever_dict = {}
+        for q_idx in range(score_matrix.shape[0]):
+            query = str(query_ids[q_idx])
+            scores = score_matrix[q_idx].cpu().numpy()
+            ranked_doc_indices = np.argsort(-scores)
+            retriever_dict[query] = {
+                str(image_ids[i]): float(scores[i]) for i in ranked_doc_indices
+            }
+        runs.append(Run(retriever_dict, name=model_key))
     return runs
 
-def get_fusion_per_query(score_matrix_list, query_ids, image_ids, save_path=None):
+def get_fusion_per_query(score_matrix_list, query_ids, image_ids):
     """
-    Perform fusion for each query independently, instead of aggregating scores globally.
-
-    Args:
-        score_matrix_list (list of torch.Tensor): List of (queries x documents) score tensors.
-        query_ids (list of int): Query identifiers.
-        image_ids (list of int): Document identifiers.
-        save_path (str, optional): Path to save the fused results.
-
-    Returns:
-        dict: Fused ranking per query.
+    Fuses the scores from many models by query. Reciprical Rank Fusion.
     """
     runs = tensor_list_to_ranx_runs(score_matrix_list, query_ids, image_ids)
-
-    # Perform **query-specific** fusion (not global aggregation)
     fused_run = fuse(runs, method="rrf")
 
-    if save_path:
-        fused_run.save(save_path, kind="trec")  # Save in TREC format for compatibility
+    fused_ordered = {
+        query_id: [
+            doc_id for doc_id, _ in sorted(
+                fused_run[query_id].items(), key=lambda x: -x[1]
+            )
+        ]
+        for query_id in fused_run.get_query_ids()
+    }
 
-    return fused_run.to_dict()
+    return fused_ordered

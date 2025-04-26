@@ -19,7 +19,7 @@
 </table>
 
 
-See the paper in this repository for more details. 
+See my paper in this repository for more details: [Paper](./README.md)
 
 ---
 

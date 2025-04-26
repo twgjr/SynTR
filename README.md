@@ -19,7 +19,7 @@
 </table>
 
 
-See my paper in this repository for more details: [Paper](./README.md)
+See my paper in this repository for more details: [Paper](./SynTR_Paper.pdf)
 
 ---
 
